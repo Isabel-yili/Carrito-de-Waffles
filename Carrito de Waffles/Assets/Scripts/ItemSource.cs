@@ -1,23 +1,56 @@
 using UnityEngine;
+using System.Collections;
 
 /// <summary>
-/// Fuente infinita de ítems — mezcla de waffle, helados, miel.
-/// Al hacer click/drag genera un nuevo ítem que sigue el cursor.
-/// GDD sección 4.2: "Clic en el recipiente de mezcla → ícono de mezcla sigue el cursor"
+/// FUENTE DE ÍTEMS — mezcla de waffle, helados (x3 sabores), miel.
+/// Mapeado sobre la ilustración:
+///   - Helados: bandeja inferior izquierda — 3 fuentes separadas
+///   - Mezcla:  tazón azul inferior derecho
+///   - Miel:    tarro naranja del mostrador derecho
+///
+/// ANIMACIONES PROCREATE para helados:
+///   Al hacer click en una bola de helado, se reproduce una animación
+///   de "sacar la bola" del contenedor. La lógica espera a que termine
+///   antes de poner el ítem en el cursor del jugador.
+///
+///   Trigger del Animator: "IceCreamSelect"
+///   Exportar desde Procreate:
+///     - Sprite sheet horizontal, fondo transparente
+///     - Tamaño sugerido: 256×256 px por frame, 6-8 frames
+///     - El último frame debe ser idéntico al primero (loop limpio)
+///
+/// JERARQUÍA DEL PREFAB:
+///   IceCreamSource_Fresa  (este script + Collider2D)
+///   ├── IceCreamBody      → SpriteRenderer — bola de helado estática (idle)
+///   └── IceCreamAnimator  → Animator — animación de selección Procreate
 /// </summary>
 [RequireComponent(typeof(Collider2D))]
 public class ItemSource : MonoBehaviour, IItemSource, IItemReceiver
 {
-    [Header("Configuración")]
+    [Header("══ Configuración ══")]
     public ItemType producedItemType;
     public GameObject itemPrefab;
 
-    [Header("Visual Feedback")]
-    public Animator sourceAnimator;  // Animación de "pulsación" al hacer click
+    [Header("══ Animación Procreate ══")]
+    [Tooltip("Animator del hijo que contiene la animación de selección")]
+    public Animator sourceAnimator;
+    [Tooltip("Trigger del Animator — debe llamarse exactamente 'IceCreamSelect' para helados o 'BowlPour' para la mezcla")]
+    public string selectTrigger = "IceCreamSelect";
+    [Tooltip("Duración de la animación antes de que el ítem aparezca en el cursor")]
+    public float animationDuration = 0.3f;
+    [Tooltip("Si true, el ítem aparece DURANTE la animación (más responsivo). Si false, espera al final.")]
+    public bool spawnDuringAnimation = true;
+
+    [Header("══ Visual de feedback ══")]
+    [Tooltip("Efecto de partículas opcional al seleccionar (frío para helado, vapor para mezcla)")]
+    public ParticleSystem selectParticle;
 
     public ItemType ProducedItemType => producedItemType;
 
+    // ─────────────────────────────────────────────────────────────
     // IItemSource
+    // ─────────────────────────────────────────────────────────────
+
     public DraggableItem SpawnItem()
     {
         if (itemPrefab == null)
@@ -26,42 +59,59 @@ public class ItemSource : MonoBehaviour, IItemSource, IItemReceiver
             return null;
         }
 
-        // Instanciar en la posición de la fuente
         GameObject go = Instantiate(itemPrefab, transform.position, Quaternion.identity);
         DraggableItem item = go.GetComponent<DraggableItem>();
-
-        if (item != null)
-        {
-            item.itemType = producedItemType;
-        }
-
-        // Feedback visual en la fuente
-        if (sourceAnimator != null)
-            sourceAnimator.SetTrigger("Pulse");
+        if (item != null) item.itemType = producedItemType;
 
         AudioManager.Instance?.PlaySound(SoundType.ItemPickup);
-
         return item;
     }
 
-    // IItemReceiver — las fuentes NO aceptan ítems (excepto basura)
+    // IItemReceiver — las fuentes no aceptan ítems
     public bool CanReceive(DraggableItem item) => false;
     public void ReceiveItem(DraggableItem item) { }
 
-    // Al hacer click sobre la fuente, spawnear y comenzar drag automáticamente
+    // ─────────────────────────────────────────────────────────────
+    // INTERACCIÓN — click sobre la fuente
+    // ─────────────────────────────────────────────────────────────
+
     void OnMouseDown()
     {
-        DraggableItem spawned = SpawnItem();
-        if (spawned != null)
-        {
-            // Iniciar el drag programáticamente en el próximo frame
-            StartCoroutine(BeginDragNextFrame(spawned));
-        }
+        StartCoroutine(SelectSequence());
     }
 
-    private System.Collections.IEnumerator BeginDragNextFrame(DraggableItem item)
+    /// <summary>
+    /// Secuencia completa: animación → spawn → drag
+    /// </summary>
+    private IEnumerator SelectSequence()
     {
-        yield return null; // Esperar un frame para que Unity procese el evento
-        DragManager.Instance?.OnItemPickedUp(item);
+        // 1. Disparar animación Procreate
+        if (sourceAnimator != null && !string.IsNullOrEmpty(selectTrigger))
+            sourceAnimator.SetTrigger(selectTrigger);
+
+        // 2. Efecto de partículas (frío, vapor, etc.)
+        if (selectParticle != null)
+            selectParticle.Play();
+
+        DraggableItem spawned = null;
+
+        if (spawnDuringAnimation)
+        {
+            // Spawn inmediato — más responsivo, el ítem aparece mientras la animación corre
+            spawned = SpawnItem();
+            if (spawned != null)
+                DragManager.Instance?.OnItemPickedUp(spawned);
+
+            yield return new WaitForSeconds(animationDuration);
+        }
+        else
+        {
+            // Spawn al terminar la animación — más dramático
+            yield return new WaitForSeconds(animationDuration);
+
+            spawned = SpawnItem();
+            if (spawned != null)
+                DragManager.Instance?.OnItemPickedUp(spawned);
+        }
     }
 }

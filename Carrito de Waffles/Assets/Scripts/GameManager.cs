@@ -30,8 +30,10 @@ public class GameManager : MonoBehaviour
     private float _timeLeft;
     private bool  _isRunning = false;
 
-    public bool IsGameRunning => _isRunning;
-    public int  CurrentMoney  => _money;
+    public bool  IsGameRunning => _isRunning;
+    public int   CurrentMoney  => _money;
+    public float TimeLeft      => _timeLeft;
+    public float GameDuration  => gameDuration;
 
     void Awake()
     {

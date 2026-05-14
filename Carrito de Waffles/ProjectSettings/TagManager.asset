@@ -12,8 +12,8 @@ TagManager:
   - Water
   - UI
   - 
-  - Draggable
-  - Receiver
+  - 
+  - 
   - 
   - 
   - 
@@ -40,4 +40,34 @@ TagManager:
   m_SortingLayers:
   - name: Default
     uniqueID: 0
+    locked: 0
+  - name: Background
+    uniqueID: 1368091341
+    locked: 0
+  - name: CounterBack
+    uniqueID: 2665370277
+    locked: 0
+  - name: CounterSurface
+    uniqueID: 2931345835
+    locked: 0
+  - name: CounterItems
+    uniqueID: 1375454591
+    locked: 0
+  - name: FloorItems
+    uniqueID: 2934188999
+    locked: 0
+  - name: DraggableItems
+    uniqueID: 2048932747
+    locked: 0
+  - name: Characters
+    uniqueID: 3951253373
+    locked: 0
+  - name: Effects
+    uniqueID: 2145023127
+    locked: 0
+  - name: UI_World
+    uniqueID: 1262024467
+    locked: 0
+  - name: BackgroundDetails
+    uniqueID: 2499221595
     locked: 0
