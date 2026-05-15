@@ -14,7 +14,8 @@ public enum ItemType
     HoneyButter,        // Miel y mantequilla
     // Estados de cocción
     WaffleRaw,          // Waffle crudo (en horno)
-    WaffleReady,        // Waffle listo
+    WaffleReady,        // Waffle listo — perfecto
+    WaffleOvercooked,   // Waffle pasado — no quemado pero no ideal
     WaffleBurned,       // Waffle quemado
     // Combinados
     WaffleWithIceCream,

@@ -20,6 +20,7 @@ public class Plate : MonoBehaviour, IItemReceiver
 
     public bool IsEmpty => _contents.Count == 0;
     public bool HasRecipe => _completedRecipe.HasValue;
+    public bool UsedOvercookedWaffle => _contents.Contains(ItemType.WaffleOvercooked);
     public RecipeType? CompletedRecipe => _completedRecipe;
 
     void Awake()
@@ -40,8 +41,13 @@ public class Plate : MonoBehaviour, IItemReceiver
 
         return item.itemType switch
         {
-            ItemType.WaffleReady        => !_contents.Contains(ItemType.WaffleReady),
-            ItemType.IceCreamVanilla    => _contents.Count == 0 || _contents.Contains(ItemType.WaffleReady),
+            ItemType.WaffleReady => !_contents.Contains(ItemType.WaffleReady)
+                                        && !_contents.Contains(ItemType.WaffleOvercooked),
+            ItemType.WaffleOvercooked => !_contents.Contains(ItemType.WaffleReady)
+                                        && !_contents.Contains(ItemType.WaffleOvercooked),
+            ItemType.IceCreamVanilla => _contents.Count == 0
+                                        || _contents.Contains(ItemType.WaffleReady)
+                                        || _contents.Contains(ItemType.WaffleOvercooked),
             ItemType.IceCreamStrawberry => _contents.Count == 0 || _contents.Contains(ItemType.WaffleReady),
             ItemType.IceCreamChocolate  => _contents.Count == 0 || _contents.Contains(ItemType.WaffleReady),
             ItemType.HoneyButter        => _contents.Contains(ItemType.WaffleReady),
