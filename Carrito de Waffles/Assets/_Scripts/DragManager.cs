@@ -46,27 +46,50 @@ public class DragManager : MonoBehaviour
     }
 
     // ─────────────────────────────────────────────────
-    // API PÚBLICA — llamada desde DraggableItem
+    // API PÚBLICA — llamada desde ItemSource / DraggableItem
     // ─────────────────────────────────────────────────
 
+    /// <summary>
+    /// Registra un ítem como "en mano" y activa su lógica de seguimiento.
+    /// DEBE llamarse siempre que se quiera que un item siga al cursor.
+    /// </summary>
     public void OnItemPickedUp(DraggableItem item)
     {
+        if (item == null) return;
+
         _selectedItem = item;
         _hasSelectedItem = true;
+
+        // ── CRÍTICO: activar el modo carry en el ítem ──────────────
+        // Sin esta llamada, _isBeingCarried permanece false y el Update
+        // del DraggableItem nunca se ejecuta → el item no sigue al cursor
+        // y los clicks no disparan TryDeliverToTarget.
+        item.StartCarrying();
+
         SetCursor(cursorHolding);
         OnItemPickedUpEvent?.Invoke(item);
+
+        Debug.Log($"[DragManager] OnItemPickedUp → {item.name} | StartCarrying llamado");
     }
 
+    /// <summary>
+    /// Libera el ítem actual (drop exitoso o cancelación desde fuera).
+    /// </summary>
     public void OnItemReleased(DraggableItem item)
     {
+        if (item != null)
+            item.StopCarrying();
+
         _selectedItem = null;
         _hasSelectedItem = false;
         SetCursor(cursorDefault);
         OnItemDroppedEvent?.Invoke(item);
+
+        Debug.Log($"[DragManager] OnItemReleased → {item?.name}");
     }
 
     /// <summary>
-    /// Modo click-to-place: selecciona un item con click
+    /// Modo click-to-place: selecciona un item con click.
     /// </summary>
     public void SelectItem(DraggableItem item)
     {
@@ -78,18 +101,18 @@ public class DragManager : MonoBehaviour
 
         _selectedItem = item;
         _hasSelectedItem = true;
+        item.StartCarrying();
         SetCursor(cursorHolding);
         OnItemPickedUpEvent?.Invoke(item);
     }
 
     /// <summary>
-    /// Intenta interactuar el item seleccionado con el target clickeado
+    /// Intenta interactuar el item seleccionado con el target clickeado.
     /// </summary>
     public void TryInteractWith(DraggableItem target)
     {
         if (!_hasSelectedItem || _selectedItem == null) return;
 
-        // Verificar si el target es un receptor
         IItemReceiver receiver = target.GetComponent<IItemReceiver>();
         if (receiver != null && receiver.CanReceive(_selectedItem))
         {
@@ -99,7 +122,6 @@ public class DragManager : MonoBehaviour
         }
         else
         {
-            // Feedback de acción inválida
             FeedbackManager.Instance?.ShowInvalidAction(target.transform.position);
             AudioManager.Instance?.PlaySound(SoundType.InvalidAction);
         }
@@ -108,13 +130,22 @@ public class DragManager : MonoBehaviour
     public void CancelSelection()
     {
         if (_selectedItem != null)
-        {
-            _selectedItem.ReturnToOrigin();
-        }
+            _selectedItem.ReturnToOrigin(); // ReturnToOrigin llama StopCarrying internamente
+
         _selectedItem = null;
         _hasSelectedItem = false;
         SetCursor(cursorDefault);
         DestroyGhost();
+    }
+
+    /// <summary>
+    /// Llamado por DraggableItem.TryDeliverToTarget cuando el drop fue exitoso.
+    /// Dispara OnSuccessfulPlacementEvent para que WaffleMixAnimatorSync
+    /// (y cualquier listener) puedan reaccionar.
+    /// </summary>
+    public void NotifySuccessfulPlacement(DraggableItem item, IItemReceiver receiver)
+    {
+        OnSuccessfulPlacementEvent?.Invoke(item, receiver);
     }
 
     // ─────────────────────────────────────────────────

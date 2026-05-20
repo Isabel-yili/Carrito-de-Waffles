@@ -45,6 +45,9 @@ public class ItemSource : MonoBehaviour, IItemSource, IItemReceiver
     [Tooltip("Efecto de partículas opcional al seleccionar (frío para helado, vapor para mezcla)")]
     public ParticleSystem selectParticle;
 
+    // ─── Estado interno  ───
+    private bool _isSpawning = false;
+
     public ItemType ProducedItemType => producedItemType;
 
     // ─────────────────────────────────────────────────────────────
@@ -77,6 +80,9 @@ public class ItemSource : MonoBehaviour, IItemSource, IItemReceiver
 
     void OnMouseDown()
     {
+        Debug.Log("[ItemSource] OnMouseDown disparado");
+        if (_isSpawning) return;
+        if (DragManager.Instance != null && DragManager.Instance.HasSelectedItem) return;
         StartCoroutine(SelectSequence());
     }
 
@@ -85,11 +91,13 @@ public class ItemSource : MonoBehaviour, IItemSource, IItemReceiver
     /// </summary>
     private IEnumerator SelectSequence()
     {
-        // 1. Disparar animación Procreate
+        _isSpawning = true;  // ← añadir
+
+        GetComponent<WaffleMixAnimatorSync>()?.NotifySelected();
+
         if (sourceAnimator != null && !string.IsNullOrEmpty(selectTrigger))
             sourceAnimator.SetTrigger(selectTrigger);
 
-        // 2. Efecto de partículas (frío, vapor, etc.)
         if (selectParticle != null)
             selectParticle.Play();
 
@@ -97,21 +105,37 @@ public class ItemSource : MonoBehaviour, IItemSource, IItemReceiver
 
         if (spawnDuringAnimation)
         {
-            // Spawn inmediato — más responsivo, el ítem aparece mientras la animación corre
             spawned = SpawnItem();
             if (spawned != null)
-                DragManager.Instance?.OnItemPickedUp(spawned);
-
+                PositionItemAtCursor(spawned);
             yield return new WaitForSeconds(animationDuration);
         }
         else
         {
-            // Spawn al terminar la animación — más dramático
             yield return new WaitForSeconds(animationDuration);
-
             spawned = SpawnItem();
             if (spawned != null)
-                DragManager.Instance?.OnItemPickedUp(spawned);
+                PositionItemAtCursor(spawned);
         }
+
+        if (spawned != null)
+        {
+            Debug.Log($"[ItemSource] Llamando OnItemPickedUp con: {spawned.name}");
+            DragManager.Instance?.OnItemPickedUp(spawned);
+        }
+
+        _isSpawning = false;  // ← añadir
+    }
+
+    /// <summary>
+    /// Coloca el item recién spawneado en la posición del cursor del jugador.
+    /// </summary>
+    private void PositionItemAtCursor(DraggableItem item)
+    {
+        Camera cam = Camera.main;
+        if (cam == null) return;
+        Vector3 mouseWorld = cam.ScreenToWorldPoint(Input.mousePosition);
+        mouseWorld.z = 0f;
+        item.transform.position = mouseWorld;
     }
 }
