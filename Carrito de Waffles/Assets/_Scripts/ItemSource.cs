@@ -64,7 +64,13 @@ public class ItemSource : MonoBehaviour, IItemSource, IItemReceiver
 
         GameObject go = Instantiate(itemPrefab, transform.position, Quaternion.identity);
         DraggableItem item = go.GetComponent<DraggableItem>();
-        if (item != null) item.itemType = producedItemType;
+        if (item != null)
+        {
+            item.itemType = producedItemType;
+            // Ingredientes temporales: Modo A — cursor-follow, se destruyen si el drop falla.
+            item.persistentDrag = false;
+            item.destroyOnFailedDrop = true;
+        }
 
         AudioManager.Instance?.PlaySound(SoundType.ItemPickup);
         return item;
@@ -81,6 +87,8 @@ public class ItemSource : MonoBehaviour, IItemSource, IItemReceiver
     void OnMouseDown()
     {
         Debug.Log("[ItemSource] OnMouseDown disparado");
+        // Indicar al DragManager que este click fue procesado por Unity's event system
+        DragManager.Instance?.MarkClickHandled();
         if (_isSpawning) return;
         if (DragManager.Instance != null && DragManager.Instance.HasSelectedItem) return;
         StartCoroutine(SelectSequence());

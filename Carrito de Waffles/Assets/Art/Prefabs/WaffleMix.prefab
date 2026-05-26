@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 393021487367747448}
   - component: {fileID: 5169059286738747415}
   - component: {fileID: 8645674467567742767}
+  - component: {fileID: 7242612864224308255}
   m_Layer: 0
   m_Name: WaffleMix
   m_TagString: Untagged
@@ -106,6 +107,33 @@ MonoBehaviour:
   staticRenderers:
   - {fileID: 5213987660319795694}
   animatedLayerSortingOrder: 0
+--- !u!50 &7242612864224308255
+Rigidbody2D:
+  serializedVersion: 4
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1347295719197021574}
+  m_BodyType: 1
+  m_Simulated: 1
+  m_UseFullKinematicContacts: 1
+  m_UseAutoMass: 0
+  m_Mass: 1
+  m_LinearDrag: 0
+  m_AngularDrag: 0.05
+  m_GravityScale: 1
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_Interpolate: 0
+  m_SleepingMode: 1
+  m_CollisionDetection: 0
+  m_Constraints: 0
 --- !u!1 &2391050072826883733
 GameObject:
   m_ObjectHideFlags: 0

@@ -133,6 +133,7 @@ GameObject:
   m_Component:
   - component: {fileID: 6673665874012803248}
   - component: {fileID: 332927309568872389}
+  - component: {fileID: 7547030461829481240}
   m_Layer: 0
   m_Name: Waffle_Burn
   m_TagString: Untagged
@@ -207,6 +208,18 @@ SpriteRenderer:
   m_WasSpriteAssigned: 1
   m_MaskInteraction: 0
   m_SpriteSortPoint: 0
+--- !u!114 &7547030461829481240
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1629470051460770080}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1113d8d2157fb96448107122b11f53fc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &6500342984036045850
 GameObject:
   m_ObjectHideFlags: 0
@@ -217,6 +230,7 @@ GameObject:
   m_Component:
   - component: {fileID: 3169041062189504355}
   - component: {fileID: 3671469391655445685}
+  - component: {fileID: 1045297271565967073}
   m_Layer: 0
   m_Name: Waffle_Ready
   m_TagString: Untagged
@@ -291,6 +305,18 @@ SpriteRenderer:
   m_WasSpriteAssigned: 1
   m_MaskInteraction: 0
   m_SpriteSortPoint: 0
+--- !u!114 &1045297271565967073
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6500342984036045850}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1113d8d2157fb96448107122b11f53fc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &7152595627810249047
 GameObject:
   m_ObjectHideFlags: 0
@@ -301,6 +327,7 @@ GameObject:
   m_Component:
   - component: {fileID: 9121999896747289592}
   - component: {fileID: 2703174025804120434}
+  - component: {fileID: 2646784137806797323}
   m_Layer: 0
   m_Name: Waffle_Overcooked
   m_TagString: Untagged
@@ -375,3 +402,15 @@ SpriteRenderer:
   m_WasSpriteAssigned: 1
   m_MaskInteraction: 0
   m_SpriteSortPoint: 0
+--- !u!114 &2646784137806797323
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7152595627810249047}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1113d8d2157fb96448107122b11f53fc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

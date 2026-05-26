@@ -8,11 +8,11 @@ using System.Collections;
 // ═══════════════════════════════════════════════════════════════════
 public enum CustomerMood
 {
-    Ecstatic  = 4,   // :D  — superfeliz, llega con mucha paciencia
-    Happy     = 3,   // :)  — feliz, paciencia normal
-    Neutral   = 2,   // :/  — neutral, menos paciencia
-    Annoyed   = 1,   // :(  — molesto, poca paciencia
-    Furious   = 0    // >:( — furioso, mínima paciencia
+    Ecstatic = 4,   // :D  — superfeliz, llega con mucha paciencia
+    Happy = 3,   // :)  — feliz, paciencia normal
+    Neutral = 2,   // :/  — neutral, menos paciencia
+    Annoyed = 1,   // :(  — molesto, poca paciencia
+    Furious = 0    // >:( — furioso, mínima paciencia
 }
 
 /// <summary>
@@ -59,7 +59,7 @@ public class Customer : MonoBehaviour
     public SpriteRenderer bodyRenderer;
     public SpriteRenderer orderBubbleRenderer;   // El globo
     public SpriteRenderer orderIconRenderer;      // Sprite del pedido dentro del globo
-    public Animator       customerAnimator;       // Animaciones Procreate del cliente
+    public Animator customerAnimator;       // Animaciones Procreate del cliente
 
     [Header("══ Sprites del globo ══")]
     public Sprite bubbleNormal;   // Globo blanco/neutro
@@ -69,17 +69,17 @@ public class Customer : MonoBehaviour
 
     [Header("══ Panel de hover (mood) ══")]
     public GameObject moodPanel;             // Se activa al hacer hover
-    public Slider     moodSlider;            // 0–1, representa paciencia restante
-    public Image      moodSliderFill;        // Cambia de color con el mood
+    public Slider moodSlider;            // 0–1, representa paciencia restante
+    public Image moodSliderFill;        // Cambia de color con el mood
     public TextMeshProUGUI moodFaceText;     // ":D" ":)" ":/" ":(" ">:("
-    public Image      moodPanelBackground;   // Fondo translúcido
+    public Image moodPanelBackground;   // Fondo translúcido
 
     [Header("══ Colores del slider de mood ══")]
     public Color colorEcstatic = new Color(0.3f, 0.9f, 0.3f);   // Verde brillante
-    public Color colorHappy    = new Color(0.6f, 0.9f, 0.3f);   // Verde amarillento
-    public Color colorNeutral  = new Color(1.0f, 0.85f, 0.2f);  // Amarillo
-    public Color colorAnnoyed  = new Color(1.0f, 0.5f,  0.1f);  // Naranja
-    public Color colorFurious  = new Color(0.9f, 0.15f, 0.1f);  // Rojo
+    public Color colorHappy = new Color(0.6f, 0.9f, 0.3f);   // Verde amarillento
+    public Color colorNeutral = new Color(1.0f, 0.85f, 0.2f);  // Amarillo
+    public Color colorAnnoyed = new Color(1.0f, 0.5f, 0.1f);  // Naranja
+    public Color colorFurious = new Color(0.9f, 0.15f, 0.1f);  // Rojo
 
     [Header("══ Entrada desde los lados ══")]
     [Tooltip("Posición final del cliente en la escena")]
@@ -92,19 +92,19 @@ public class Customer : MonoBehaviour
 
     // ─── Estado interno ───────────────────────────────────────────
     private RecipeType _order;
-    private float      _maxPatience;
-    private float      _patience;
+    private float _maxPatience;
+    private float _patience;
     private CustomerMood _currentMood;
-    private bool       _isServed    = false;
-    private bool       _isLeaving   = false;
-    private bool       _isHovering  = false;
+    private bool _isServed = false;
+    private bool _isLeaving = false;
+    private bool _isHovering = false;
 
     // Referencia al OrderManager para notificar cuando se va
     private OrderManager _orderManager;
 
-    public RecipeType Order         => _order;
-    public float      PatienceRatio => _patience / _maxPatience;
-    public bool       IsServed      => _isServed;
+    public RecipeType Order => _order;
+    public float PatienceRatio => _patience / _maxPatience;
+    public bool IsServed => _isServed;
 
     // ─────────────────────────────────────────────────────────────
     // INICIALIZACIÓN — llamado desde OrderManager al instanciar
@@ -112,20 +112,20 @@ public class Customer : MonoBehaviour
 
     public void Initialize(RecipeType order, float patience, bool fromLeft, Vector3 target, OrderManager manager)
     {
-        _order        = order;
-        _maxPatience  = patience;
-        _patience     = patience;
+        _order = order;
+        _maxPatience = patience;
+        _patience = patience;
         _orderManager = manager;
         targetPosition = target;
-        enterFromLeft  = fromLeft;
+        enterFromLeft = fromLeft;
 
         // Mood inicial: aleatorio entre Ecstatic y Happy
-        initialMood  = (CustomerMood)Random.Range(3, 5);
+        initialMood = (CustomerMood)Random.Range(3, 5);
         _currentMood = initialMood;
 
         // Ajustar paciencia según mood
         float moodMultiplier = patienceByMood.Evaluate((float)initialMood);
-        _patience    = _maxPatience * moodMultiplier;
+        _patience = _maxPatience * moodMultiplier;
         _maxPatience = _patience;
 
         // Configurar visual del pedido en el globo
@@ -181,11 +181,11 @@ public class Customer : MonoBehaviour
         float ratio = PatienceRatio;
         CustomerMood newMood;
 
-        if      (ratio > 0.75f) newMood = CustomerMood.Ecstatic;
+        if (ratio > 0.75f) newMood = CustomerMood.Ecstatic;
         else if (ratio > 0.50f) newMood = CustomerMood.Happy;
         else if (ratio > 0.30f) newMood = CustomerMood.Neutral;
         else if (ratio > 0.10f) newMood = CustomerMood.Annoyed;
-        else                    newMood = CustomerMood.Furious;
+        else newMood = CustomerMood.Furious;
 
         // Limitar: el mood nunca puede mejorar, solo empeorar
         if ((int)newMood < (int)_currentMood)
@@ -266,6 +266,17 @@ public class Customer : MonoBehaviour
         AudioManager.Instance?.PlaySound(SoundType.CustomerHappy);
 
         StartCoroutine(LeaveAfterDelay(1.2f, true));
+    }
+
+    /// <summary>
+    /// Reduce la paciencia del cliente como penalización por un pedido incorrecto.
+    /// Llamado desde OrderManager al fallar una entrega.
+    /// </summary>
+    public void PenalizePatience(float amount)
+    {
+        if (_isServed || _isLeaving) return;
+        _patience = Mathf.Max(0f, _patience - amount);
+        Debug.Log($"[Customer] Paciencia penalizada -{amount:F1}s → {_patience:F1}s restantes.");
     }
 
     /// <summary>
@@ -364,8 +375,8 @@ public class Customer : MonoBehaviour
         orderBubbleRenderer.sprite = state switch
         {
             BubbleState.Correct => bubbleGreen,
-            BubbleState.Error   => bubbleRed,
-            _                   => bubbleNormal
+            BubbleState.Error => bubbleRed,
+            _ => bubbleNormal
         };
     }
 
@@ -384,20 +395,20 @@ public class Customer : MonoBehaviour
     private Color GetMoodColor(CustomerMood mood) => mood switch
     {
         CustomerMood.Ecstatic => colorEcstatic,
-        CustomerMood.Happy    => colorHappy,
-        CustomerMood.Neutral  => colorNeutral,
-        CustomerMood.Annoyed  => colorAnnoyed,
-        CustomerMood.Furious  => colorFurious,
-        _                     => colorNeutral
+        CustomerMood.Happy => colorHappy,
+        CustomerMood.Neutral => colorNeutral,
+        CustomerMood.Annoyed => colorAnnoyed,
+        CustomerMood.Furious => colorFurious,
+        _ => colorNeutral
     };
 
     private string GetMoodFace(CustomerMood mood) => mood switch
     {
         CustomerMood.Ecstatic => ":D",
-        CustomerMood.Happy    => ":)",
-        CustomerMood.Neutral  => ":/",
-        CustomerMood.Annoyed  => ":(",
-        CustomerMood.Furious  => ">:(",
-        _                     => ":/"
+        CustomerMood.Happy => ":)",
+        CustomerMood.Neutral => ":/",
+        CustomerMood.Annoyed => ":(",
+        CustomerMood.Furious => ">:(",
+        _ => ":/"
     };
 }

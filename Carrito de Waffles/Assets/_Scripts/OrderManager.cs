@@ -25,10 +25,10 @@ public class OrderManager : MonoBehaviour
 
     [Header("══ Dificultad progresiva (GDD 8.2) ══")]
     public float difficultyRampInterval = 30f;
-    public float patienceReduction      = 3f;
+    public float patienceReduction = 3f;
     public float spawnIntervalReduction = 2f;
-    public float minPatience            = 12f;
-    public float minSpawnInterval       = 8f;
+    public float minPatience = 12f;
+    public float minSpawnInterval = 8f;
 
     [Header("══ Posiciones de llegada ══")]
     [Tooltip("Transform del slot izquierdo (frente al mostrador)")]
@@ -47,13 +47,13 @@ public class OrderManager : MonoBehaviour
     public GameManager gameManager;
 
     // ─── Estado interno ───────────────────────────────────────────
-    private List<Customer> _activeCustomers  = new List<Customer>();
+    private List<Customer> _activeCustomers = new List<Customer>();
     private float _currentPatience;
     private float _currentSpawnInterval;
-    private float _spawnTimer     = 0f;
+    private float _spawnTimer = 0f;
     private float _difficultyTimer = 0f;
-    private bool  _leftSlotFree   = true;
-    private bool  _rightSlotFree  = true;
+    private bool _leftSlotFree = true;
+    private bool _rightSlotFree = true;
 
     // ─────────────────────────────────────────────────────────────
     // INICIALIZACIÓN
@@ -61,7 +61,7 @@ public class OrderManager : MonoBehaviour
 
     void Start()
     {
-        _currentPatience      = initialPatience;
+        _currentPatience = initialPatience;
         _currentSpawnInterval = initialSpawnInterval;
         StartCoroutine(SpawnFirstCustomerAfterDelay(3f));
     }
@@ -70,7 +70,7 @@ public class OrderManager : MonoBehaviour
     {
         if (gameManager == null || !gameManager.IsGameRunning) return;
 
-        _spawnTimer      += Time.deltaTime;
+        _spawnTimer += Time.deltaTime;
         _difficultyTimer += Time.deltaTime;
 
         if (_spawnTimer >= _currentSpawnInterval && _activeCustomers.Count < maxSimultaneousCustomers)
@@ -94,19 +94,19 @@ public class OrderManager : MonoBehaviour
     {
         if (customerPrefab == null) return;
 
-        bool canLeft  = _leftSlotFree  && slotLeft  != null;
+        bool canLeft = _leftSlotFree && slotLeft != null;
         bool canRight = _rightSlotFree && slotRight != null;
         if (!canLeft && !canRight) return;
 
         // Elegir lado disponible; si ambos están libres, aleatorio
         bool useLeft;
-        if      (canLeft && canRight) useLeft = Random.value > 0.5f;
-        else if (canLeft)             useLeft = true;
-        else                          useLeft = false;
+        if (canLeft && canRight) useLeft = Random.value > 0.5f;
+        else if (canLeft) useLeft = true;
+        else useLeft = false;
 
         Transform slot = useLeft ? slotLeft : slotRight;
-        if (useLeft) _leftSlotFree  = false;
-        else         _rightSlotFree = false;
+        if (useLeft) _leftSlotFree = false;
+        else _rightSlotFree = false;
 
         // Paciencia con multiplicador de decoraciones
         float patience = _currentPatience;
@@ -156,10 +156,15 @@ public class OrderManager : MonoBehaviour
         }
 
         // Ningún cliente tiene ese pedido → todos los globos en rojo
+        // + penalización de paciencia (10% de la paciencia máxima actual)
         foreach (var c in _activeCustomers)
-            if (c != null && !c.IsServed) c.FlashError();
+        {
+            if (c == null || c.IsServed) continue;
+            c.FlashError();
+            c.PenalizePatience(_currentPatience * 0.10f);
+        }
 
-        Debug.Log($"[OrderManager] ❌ Pedido incorrecto: {deliveredRecipe}");
+        Debug.Log($"[OrderManager] ❌ Pedido incorrecto: {deliveredRecipe} — paciencia penalizada en todos los clientes.");
         return false;
     }
 
@@ -184,7 +189,7 @@ public class OrderManager : MonoBehaviour
 
     private void IncreaseDifficulty()
     {
-        _currentPatience      = Mathf.Max(minPatience,      _currentPatience      - patienceReduction);
+        _currentPatience = Mathf.Max(minPatience, _currentPatience - patienceReduction);
         _currentSpawnInterval = Mathf.Max(minSpawnInterval, _currentSpawnInterval - spawnIntervalReduction);
         Debug.Log($"[OrderManager] Dificultad ↑ — Paciencia: {_currentPatience}s | Spawn: {_currentSpawnInterval}s");
     }
@@ -195,7 +200,7 @@ public class OrderManager : MonoBehaviour
 
     private void FreeSlot(Customer customer)
     {
-        if (slotLeft  != null && Vector3.Distance(customer.targetPosition, slotLeft.position)  < 0.5f) _leftSlotFree  = true;
+        if (slotLeft != null && Vector3.Distance(customer.targetPosition, slotLeft.position) < 0.5f) _leftSlotFree = true;
         if (slotRight != null && Vector3.Distance(customer.targetPosition, slotRight.position) < 0.5f) _rightSlotFree = true;
     }
 

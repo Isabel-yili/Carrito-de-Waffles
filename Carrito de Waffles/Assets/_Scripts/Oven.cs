@@ -3,71 +3,42 @@ using UnityEngine.UI;
 using System.Collections;
 
 /// <summary>
-/// WAFFLERA v3 — Flujo de waffle como objeto independiente arrastrable.
+/// WAFFLERA v4 — Arquitectura con nodo visual explícito.
 ///
-/// ═══════════════════════════════════════════════════════════════════
-/// CAMBIOS RESPECTO A v2
-/// ═══════════════════════════════════════════════════════════════════
+/// PROBLEMA RESUELTO:
+///   Las versiones anteriores usaban SetActiveWaffleChild() (busca hijos por nombre)
+///   y GetComponentInChildren (devuelve cualquier SR, incluso ocultos), lo que
+///   causaba que los sprites no cambiaran y la escala se corrompiera al cambiar
+///   de parent entre el Oven local-space y el world-space.
 ///
-///   ExtractWaffle():
-///     - Spawna el waffle como DraggableItem en la escena.
-///     - Registra este Oven como "_originOven" del waffle via SetOriginOven().
-///     - El horno queda en estado "WaffleExtracted" (visual abierto, en espera).
+/// NUEVA ARQUITECTURA — dos campos explícitos en Inspector:
 ///
-///   ReturnWaffle(DraggableItem):
-///     - Llamado por DraggableItem.ReturnToOrigin() si el drop falla.
-///     - Restaura el sprite del waffle en el WaffleDisplay del horno.
-///     - Destruye el GameObject del waffle extraído.
-///     - Vuelve al estado Ready/Overcooked/Burned correspondiente y
-///       reactiva el timer si hay ventana de tiempo restante.
+///   waffleDisplay   → el GameObject raíz que se desparentiza y arrastra.
+///                     Tiene Collider2D propio. NO necesita SpriteRenderer.
 ///
-/// ═══════════════════════════════════════════════════════════════════
-/// FLUJO DE ESTADOS DEL ANIMATOR CONTROLLER
-/// ═══════════════════════════════════════════════════════════════════
+///   waffleRenderer  → el SpriteRenderer exacto que muestra el sprite del waffle.
+///                     Puede estar en waffleDisplay o en un hijo directo.
+///                     Se asigna manualmente en Inspector — nunca se busca dinámicamente.
 ///
-///   [Any State] ──(Trigger: DoClose)──► WaffleraClose
-///                                              │  (Exit Time)
-///                                              ▼
-///                                       WaffleraCooking  ◄─── loop
-///                                              │
-///                                    (Trigger: DoShake)
-///                                              ▼
-///                                        WaffleraShake
-///                                              │  (Exit Time)
-///                                              ▼
-///                                        WaffleraOpen
-///                                              │
-///                                   [Animation Event → OnWaffleReveal]
-///                                    (Trigger: DoIdle)
-///                                              ▼
-///                                        WaffleraIdle  ◄─── loop (estado por defecto)
+/// TRANSFORM:
+///   Al extraer: se guarda localScale/localPos/localRot DENTRO de la jerarquía,
+///   luego se preserva lossyScale en world-space al desparentizar.
+///   Al devolver: SetParent primero, luego se restauran los valores locales guardados.
 ///
-/// ═══════════════════════════════════════════════════════════════════
-/// PARÁMETROS DEL ANIMATOR CONTROLLER
-/// ═══════════════════════════════════════════════════════════════════
-///
-///   Nombre        Tipo      Descripción
-///   ────────────  ────────  ──────────────────────────────────────────
-///   DoClose       Trigger   Inicia cierre al recibir WaffleMix.
-///   DoShake       Trigger   Sacudida cuando el waffle está listo.
-///   DoIdle        Trigger   Regresa a idle tras revelar el waffle.
-///   IsCooking     Bool      true mientras _state == Cooking.
-///
-/// ═══════════════════════════════════════════════════════════════════
-/// ANIMATION EVENT — WaffleraOpen.anim
-/// ═══════════════════════════════════════════════════════════════════
-///
-///   Función: OnWaffleReveal
-///   Frame: cuando la tapa está completamente abierta.
-///   Si el Animator está en un hijo (AnimatedLayer), añadir
-///   OvenAnimatorEventRelay en ese hijo y asignarlo en el Inspector.
+/// SETUP EN UNITY:
+///   1. waffleDisplay  → arrastrar el GameObject "WaffleDisplay" (el padre).
+///   2. waffleRenderer → arrastrar el SpriteRenderer exacto que quieres que cambie.
+///      (puede ser un hijo de waffleDisplay, p.ej. "Waffle_Ready")
+///   3. Asignar spriteWaffleReady / spriteWaffleOvercooked / spriteWaffleBurned.
+///   4. Los demás hijos de waffleDisplay que sean solo decorativos: quitar Collider2D.
 ///
 /// JERARQUÍA DEL PREFAB:
 ///   Oven  (este script + Collider2D)
 ///   ├── Body              → SpriteRenderer — wafflera estática
-///   ├── AnimatedLayer     → Animator — recibe los triggers
-///   │   └── [OvenAnimatorEventRelay adjunto aquí]
-///   ├── WaffleDisplay     → SpriteRenderer — DESACTIVADO al inicio
+///   ├── AnimatedLayer     → Animator
+///   │   └── OvenAnimatorEventRelay
+///   ├── WaffleDisplay     → Collider2D (trigger) — objeto raíz del drag
+///   │   └── WaffleSprite  → SpriteRenderer — ← asignar a waffleRenderer
 ///   ├── SteamEffect       → ParticleSystem
 ///   ├── SmokeEffect       → ParticleSystem
 ///   ├── ReadyGlow         → SpriteRenderer / Light2D
@@ -76,40 +47,26 @@ using System.Collections;
 /// </summary>
 public class Oven : MonoBehaviour, IItemReceiver
 {
-    // ─── Estados internos ─────────────────────────────────────────
+    // ─── Estados ──────────────────────────────────────────────────
     public enum OvenState
     {
-        Empty,
-        Closing,
-        Cooking,
-        Shaking,
-        Opening,
-        Ready,
-        Overcooked,
-        Burned,
-        WaffleExtracted   // ← NUEVO: waffle en la escena, horno en espera
+        Empty, Closing, Cooking, Shaking, Opening,
+        Ready, Overcooked, Burned, WaffleExtracted
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
     // INSPECTOR
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
 
-    [Header("══ Configuración de cocción (GDD 4.3) ══")]
-    [Tooltip("Segundos hasta que el waffle está listo — GDD base: 6s")]
+    [Header("══ Cocción ══")]
     public float cookingTime = 6f;
-    [Tooltip("Ventana perfecta en segundos — waffle en su punto óptimo")]
     public float perfectWindow = 3f;
-    [Tooltip("Ventana pasado en segundos — waffle aceptable pero no ideal")]
     public float overcookedWindow = 3f;
 
     [Header("══ Animator ══")]
-    [Tooltip("Animator del hijo 'AnimatedLayer'.")]
     public Animator waffleraAnimator;
-    [Tooltip("Relay para Animation Events desde un hijo separado. Dejar null si el Animator está en el mismo GO.")]
     public OvenAnimatorEventRelay animatorEventRelay;
-    [Tooltip("Duración del clip WaffleraClose — fallback si Exit Time falla")]
     public float closeAnimDuration = 0.5f;
-    [Tooltip("Duración del clip WaffleraOpen — referencia para el fallback")]
     public float openAnimDuration = 0.6f;
 
     private const string PARAM_DO_CLOSE = "DoClose";
@@ -117,19 +74,23 @@ public class Oven : MonoBehaviour, IItemReceiver
     private const string PARAM_DO_IDLE = "DoIdle";
     private const string PARAM_IS_COOKING = "IsCooking";
 
-    [Header("══ Efectos visuales ══")]
-    [Tooltip("SpriteRenderer del waffle sobre la wafflera — DESACTIVAR en el Inspector al inicio")]
-    public SpriteRenderer waffleDisplay;
+    [Header("══ Waffle — objetos explícitos ══")]
+    [Tooltip("GameObject raíz del waffle. Se desparentiza al extraer. Necesita Collider2D propio.")]
+    public GameObject waffleDisplay;
+
+    [Tooltip("SpriteRenderer EXACTO que muestra el sprite del waffle. Asignar manualmente — nunca se busca con GetComponent.")]
+    public SpriteRenderer waffleRenderer;
+
+    [Tooltip("Sprite cuando el waffle está listo (Ready)")]
     public Sprite spriteWaffleReady;
+    [Tooltip("Sprite cuando el waffle está pasado (Overcooked)")]
     public Sprite spriteWaffleOvercooked;
+    [Tooltip("Sprite cuando el waffle está quemado (Burned)")]
     public Sprite spriteWaffleBurned;
 
-    [Header("══ FX Prefabs ══")]
+    [Header("══ FX ══")]
     public GameObject steamFXPrefab;
     public GameObject smokeFXPrefab;
-
-    private GameObject _steamInstance;
-    private GameObject _smokeInstance;
     public GameObject readyGlow;
 
     [Header("══ Barra de calor ══")]
@@ -140,33 +101,33 @@ public class Oven : MonoBehaviour, IItemReceiver
     public Color colorOvercooked = new Color(0.9f, 0.45f, 0.0f);
     public Color colorDanger = new Color(0.9f, 0.2f, 0.1f);
 
-    [Header("══ Configuración de extracción ══")]
-    [Tooltip("Sorting Order del waffle mientras está siendo arrastrado")]
+    [Header("══ Extracción ══")]
     public int waffleCarrySortingOrder = 50;
 
-    [Header("══ Slot de mejoras ══")]
+    [Header("══ Mejoras ══")]
     public int ovenIndex = 0;
     public bool isUnlocked = true;
     public GameObject lockedOverlay;
 
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
     // ESTADO INTERNO
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
 
     private OvenState _state = OvenState.Empty;
     private float _timer = 0f;
     private bool _timerRunning = false;
     private bool _shakeDispatched = false;
-
-    // Estado del waffle en el momento de la extracción (para poder restaurarlo)
     private OvenState _extractedWaffleState = OvenState.Ready;
 
-    // Posición local y padre originales del WaffleDisplay para re-parentizar correctamente
-    private Vector3 _waffleDisplayLocalPos;
-    private Transform _waffleDisplayOriginalParent;
-    private int _waffleDisplayOriginalSortingOrder;
+    private GameObject _steamInstance;
+    private GameObject _smokeInstance;
 
-    // Referencia al waffle actualmente extraído (para evitar doble extracción)
+    // Transform guardado DENTRO de la jerarquía original (antes de desparentizar)
+    private Transform _waffleOriginalParent;
+    private Vector3 _waffleLocalPos;
+    private Vector3 _waffleLocalScale;
+    private Quaternion _waffleLocalRot;
+
     private DraggableItem _extractedWaffle;
 
     public OvenState State => _state;
@@ -176,9 +137,9 @@ public class Oven : MonoBehaviour, IItemReceiver
     private float OvercookedStart => cookingTime + perfectWindow;
     private float BurnedStart => cookingTime + perfectWindow + overcookedWindow;
 
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
     // CICLO DE VIDA
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
 
     void Awake()
     {
@@ -196,9 +157,33 @@ public class Oven : MonoBehaviour, IItemReceiver
         if (animatorEventRelay != null)
             animatorEventRelay.SetOwner(this);
 
-        SetState(OvenState.Empty);
+        // Validar referencias críticas
+        if (waffleDisplay == null)
+            Debug.LogError("[Oven] waffleDisplay no asignado en el Inspector.");
+        if (waffleRenderer == null)
+            Debug.LogError("[Oven] waffleRenderer no asignado en el Inspector. " +
+                           "Arrastra el SpriteRenderer exacto del waffle.");
 
-        if (waffleDisplay != null) waffleDisplay.enabled = false;
+        // Garantizar que el Collider2D del WaffleDisplay es trigger
+        if (waffleDisplay != null)
+        {
+            Collider2D col = waffleDisplay.GetComponent<Collider2D>();
+            if (col != null)
+                col.isTrigger = true;
+            else
+                Debug.LogWarning("[Oven] WaffleDisplay no tiene Collider2D. Añade uno en el prefab.");
+
+            // Los hijos de waffleDisplay NO deben tener Collider activo
+            // (el único collider interactivo es el del raíz WaffleDisplay)
+            foreach (Transform child in waffleDisplay.transform)
+            {
+                Collider2D childCol = child.GetComponent<Collider2D>();
+                if (childCol != null) childCol.enabled = false;
+            }
+        }
+
+        SetState(OvenState.Empty);
+        if (waffleDisplay != null) waffleDisplay.SetActive(false);
         if (cookingBar != null) cookingBar.gameObject.SetActive(false);
         if (lockedOverlay != null) lockedOverlay.SetActive(!isUnlocked);
     }
@@ -210,27 +195,24 @@ public class Oven : MonoBehaviour, IItemReceiver
         _timer += Time.deltaTime;
         UpdateCookingBar();
 
-        // Cooking → Ready
         if (_state == OvenState.Cooking && _timer >= cookingTime && !_shakeDispatched)
         {
             _shakeDispatched = true;
             StartCoroutine(WaffleReadySequence());
         }
-        // Ready → Overcooked
         else if (_state == OvenState.Ready && _timer >= OvercookedStart)
         {
             WaffleOvercooked();
         }
-        // Overcooked → Burned
         else if (_state == OvenState.Overcooked && _timer >= BurnedStart)
         {
             WaffleBurned();
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // IItemReceiver — recibe WaffleMix
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
+    // IItemReceiver
+    // ═══════════════════════════════════════════════════════════
 
     public bool CanReceive(DraggableItem item)
     {
@@ -241,24 +223,22 @@ public class Oven : MonoBehaviour, IItemReceiver
 
     public void ReceiveItem(DraggableItem item)
     {
-        Debug.Log($"[Oven] ReceiveItem — item: {item?.itemType} | CanReceive: {CanReceive(item)} | State: {_state}");
+        Debug.Log($"[Oven] ReceiveItem — {item?.itemType} | State: {_state}");
         if (!CanReceive(item)) return;
         Destroy(item.gameObject);
         StartCoroutine(StartCookingSequence());
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // SECUENCIAS DE ANIMACIÓN
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
+    // SECUENCIAS
+    // ═══════════════════════════════════════════════════════════
 
     private IEnumerator StartCookingSequence()
     {
         SetState(OvenState.Closing);
         _shakeDispatched = false;
-
         SetAnimatorBool(PARAM_IS_COOKING, false);
         SetAnimatorTrigger(PARAM_DO_CLOSE);
-
         AudioManager.Instance?.PlaySound(SoundType.OvenStart);
 
         yield return new WaitForSeconds(closeAnimDuration);
@@ -277,7 +257,6 @@ public class Oven : MonoBehaviour, IItemReceiver
         _timerRunning = false;
         SetState(OvenState.Shaking);
         SetAnimatorBool(PARAM_IS_COOKING, false);
-
         if (_steamInstance != null) _steamInstance.SetActive(false);
 
         SetAnimatorTrigger(PARAM_DO_SHAKE);
@@ -285,72 +264,79 @@ public class Oven : MonoBehaviour, IItemReceiver
         FeedbackManager.Instance?.ShowReadyGlow(transform.position);
 
         SetState(OvenState.Opening);
-
-        float shakeOpenDuration = openAnimDuration + 0.5f;
-        yield return new WaitForSeconds(shakeOpenDuration);
+        yield return new WaitForSeconds(openAnimDuration + 0.5f);
 
         if (_state == OvenState.Opening)
             OnWaffleReveal();
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
     // ANIMATION EVENT
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// Llamado por el Animation Event en WaffleraOpen.anim, o por el relay
-    /// si el Animator vive en un hijo.
-    /// </summary>
     public void OnWaffleReveal()
     {
         if (_state != OvenState.Opening) return;
-
-        if (waffleDisplay != null)
-        {
-            waffleDisplay.sprite = spriteWaffleReady;
-            waffleDisplay.enabled = true;
-        }
-
-        if (readyGlow != null) readyGlow.SetActive(true);
-
+        ShowWaffle(spriteWaffleReady);
+        ActivateReadyGlow();
         SetAnimatorTrigger(PARAM_DO_IDLE);
         SetState(OvenState.Ready);
         _timerRunning = true;
+        Debug.Log("[Oven] OnWaffleReveal → Ready");
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // ESTADOS DE DEGRADACIÓN
-    // ═══════════════════════════════════════════════════════════════
+    /// <summary>
+    /// Activa el ReadyGlow y hace Play() en todos sus ParticleSystems.
+    /// SetActive(true) no reinicia partículas automáticamente en Unity,
+    /// por lo que es necesario llamar Play() explícitamente.
+    /// </summary>
+    private void ActivateReadyGlow()
+    {
+        if (readyGlow == null) return;
+        readyGlow.SetActive(true);
+        // Reproducir todos los ParticleSystems hijos
+        foreach (var ps in readyGlow.GetComponentsInChildren<ParticleSystem>(true))
+        {
+            ps.Clear();
+            ps.Play();
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // DEGRADACIÓN
+    // ═══════════════════════════════════════════════════════════
 
     private void WaffleOvercooked()
     {
         SetState(OvenState.Overcooked);
-        if (waffleDisplay != null) waffleDisplay.sprite = spriteWaffleOvercooked;
+        ShowWaffle(spriteWaffleOvercooked);
         if (readyGlow != null) readyGlow.SetActive(false);
         AudioManager.Instance?.PlaySound(SoundType.WaffleBurned);
+        Debug.Log("[Oven] WaffleOvercooked");
     }
 
     private void WaffleBurned()
     {
         _timerRunning = false;
         SetState(OvenState.Burned);
-
-        if (waffleDisplay != null) waffleDisplay.sprite = spriteWaffleBurned;
+        ShowWaffle(spriteWaffleBurned);
         if (_smokeInstance != null) _smokeInstance.SetActive(true);
         if (readyGlow != null) readyGlow.SetActive(false);
-
         SetAnimatorTrigger(PARAM_DO_SHAKE);
         AudioManager.Instance?.PlaySound(SoundType.WaffleBurned);
         FeedbackManager.Instance?.ShowBurnEffect(transform.position);
+        Debug.Log("[Oven] WaffleBurned");
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // EXTRACCIÓN — click sobre la wafflera cuando está lista
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
+    // EXTRACCIÓN
+    // ═══════════════════════════════════════════════════════════
 
-    void OnMouseDown()
+    // OnMouseDown() eliminado — DragManager.HandleWorldClick() llama
+    // RequestExtract() después de detectar el Oven con OverlapPoint.
+
+    public void RequestExtract()
     {
-        // Si el jugador lleva un ítem en el cursor, intentar recibir WaffleMix
         if (DragManager.Instance != null && DragManager.Instance.HasSelectedItem)
         {
             DraggableItem held = DragManager.Instance.SelectedItem;
@@ -358,15 +344,15 @@ public class Oven : MonoBehaviour, IItemReceiver
             {
                 ReceiveItem(held);
                 DragManager.Instance.OnItemReleased(held);
-                return;
             }
-
-            FeedbackManager.Instance?.ShowInvalidAction(transform.position);
-            AudioManager.Instance?.PlaySound(SoundType.InvalidAction);
+            else
+            {
+                FeedbackManager.Instance?.ShowInvalidAction(transform.position);
+                AudioManager.Instance?.PlaySound(SoundType.InvalidAction);
+            }
             return;
         }
 
-        // Sin ítem en cursor: extraer el waffle según el estado actual
         switch (_state)
         {
             case OvenState.Ready: ExtractWaffle(ItemType.WaffleReady); break;
@@ -375,62 +361,69 @@ public class Oven : MonoBehaviour, IItemReceiver
         }
     }
 
-    /// <summary>
-    /// Extrae el waffle convirtiendo el WaffleDisplay existente en un DraggableItem.
-    ///
-    /// NO se instancia ningún prefab. El propio GameObject del WaffleDisplay
-    /// recibe DraggableItem + Collider2D en runtime, se desparentiza del horno
-    /// y pasa a seguir el cursor del jugador.
-    ///
-    /// Si el jugador suelta el waffle en un lugar inválido, DraggableItem.ReturnToOrigin()
-    /// llama Oven.ReturnWaffle(), que re-parentiza el WaffleDisplay, quita los
-    /// componentes añadidos y restaura el estado del horno.
-    /// </summary>
     private void ExtractWaffle(ItemType waffleType)
     {
         if (_state == OvenState.WaffleExtracted) return;
         if (waffleDisplay == null)
         {
-            Debug.LogError("[Oven] waffleDisplay no asignado en el Inspector.");
+            Debug.LogError("[Oven] ExtractWaffle: waffleDisplay es null.");
             return;
         }
 
         _timerRunning = false;
         _extractedWaffleState = _state;
 
-        // Guardar jerarquia original del WaffleDisplay para restaurarla al volver
-        _waffleDisplayOriginalParent = waffleDisplay.transform.parent;
-        _waffleDisplayLocalPos = waffleDisplay.transform.localPosition;
-        _waffleDisplayOriginalSortingOrder = waffleDisplay.sortingOrder;
+        // ── 1. Guardar transform LOCAL completo (dentro de la jerarquía del Oven) ──
+        // Guardamos los valores LOCALES porque son los que necesitamos restaurar.
+        // Si guardáramos world-values, al hacer SetParent de vuelta los recalcularía
+        // y quedarían corruptos si el Oven tiene escala distinta de (1,1,1).
+        _waffleOriginalParent = waffleDisplay.transform.parent;
+        _waffleLocalPos = waffleDisplay.transform.localPosition;
+        _waffleLocalScale = waffleDisplay.transform.localScale;
+        _waffleLocalRot = waffleDisplay.transform.localRotation;
 
-        // Apagar efectos visuales mientras el waffle esta fuera
+        Debug.Log($"[Oven] ExtractWaffle — lossyScale antes: {waffleDisplay.transform.lossyScale} | localScale guardado: {_waffleLocalScale}");
+
+        // ── 2. Apagar efectos ──
         if (_smokeInstance != null) _smokeInstance.SetActive(false);
         if (readyGlow != null) readyGlow.SetActive(false);
         if (cookingBar != null) cookingBar.gameObject.SetActive(false);
 
-        // Desparentizar: el WaffleDisplay pasa a ser un objeto libre en la escena
+        // ── 3. Capturar lossyScale ANTES de desparentizar ──
+        // Tras SetParent(null), Unity recalcula localScale = lossyScale / scale_del_nuevo_padre.
+        // El nuevo padre es null (world, escala 1,1,1), así que localScale = lossyScale anterior.
+        // Capturamos lossyScale para forzarlo manualmente después.
+        Vector3 worldScaleToPreserve = waffleDisplay.transform.lossyScale;
+
+        // ── 4. Desparentizar ──
         waffleDisplay.transform.SetParent(null, worldPositionStays: true);
 
-        // Garantizar que tiene Collider2D trigger para la deteccion de receptores
-        Collider2D col = waffleDisplay.GetComponent<Collider2D>();
-        if (col == null)
-        {
-            var box = waffleDisplay.gameObject.AddComponent<BoxCollider2D>();
-            box.size = Vector2.one * 0.8f;
-            col = box;
-        }
-        col.isTrigger = true;
+        // ── 5. Forzar escala world correcta ──
+        // Sin esto, si el Oven tiene escala != (1,1,1), el waffle aparece enorme o diminuto.
+        waffleDisplay.transform.localScale = worldScaleToPreserve;
 
-        // Añadir DraggableItem en runtime si el WaffleDisplay no lo tenia
-        _extractedWaffle = waffleDisplay.GetComponent<DraggableItem>();
-        if (_extractedWaffle == null)
-            _extractedWaffle = waffleDisplay.gameObject.AddComponent<DraggableItem>();
+        Debug.Log($"[Oven] Tras SetParent(null) — localScale = {worldScaleToPreserve}");
+
+        // ── 6. Desactivar colliders de hijos (no deben interferir con el drop) ──
+        foreach (Transform child in waffleDisplay.transform)
+        {
+            Collider2D childCol = child.GetComponent<Collider2D>();
+            if (childCol != null) childCol.enabled = false;
+        }
+
+        // ── 7. Añadir DraggableItem al raíz ──
+        // Destruir residual de un ciclo anterior para evitar estado corrupto.
+        DraggableItem existing = waffleDisplay.GetComponent<DraggableItem>();
+        if (existing != null) Destroy(existing);
+        _extractedWaffle = waffleDisplay.AddComponent<DraggableItem>();
 
         _extractedWaffle.itemType = waffleType;
         _extractedWaffle.isDraggable = true;
+        _extractedWaffle.persistentDrag = true;   // Objeto de escena — Modo B
+        _extractedWaffle.destroyOnFailedDrop = false; // Vuelve al horno si falla
         _extractedWaffle.carrySortingOrder = waffleCarrySortingOrder;
 
-        // Posicionar en el cursor del jugador
+        // ── 8. Posicionar en el cursor ──
         Camera cam = Camera.main;
         if (cam != null)
         {
@@ -441,53 +434,43 @@ public class Oven : MonoBehaviour, IItemReceiver
             waffleDisplay.transform.position = mouseWorld;
         }
 
-        // Registrar este horno como origen para que ReturnToOrigin() nos llame de vuelta
         _extractedWaffle.SetOriginOven(this);
-
-        // Entregar al cursor del jugador
         DragManager.Instance?.OnItemPickedUp(_extractedWaffle);
 
         SetState(OvenState.WaffleExtracted);
-        Debug.Log($"[Oven] WaffleDisplay desparentizado y arrastrable: {waffleType}");
+        Debug.Log($"[Oven] Waffle extraído: {waffleType}");
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // RETORNO DEL WAFFLE AL HORNO
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
+    // RETORNO AL HORNO
+    // ═══════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// Llamado por DraggableItem.ReturnToOrigin() cuando el waffle no pudo
-    /// ser entregado a ningún Plate válido.
-    ///
-    /// Re-parentiza el WaffleDisplay al horno, elimina los componentes añadidos
-    /// en runtime (DraggableItem y Collider2D), restaura posición/sprite y
-    /// reactiva el timer si todavía hay ventana de tiempo.
-    /// </summary>
     public void ReturnWaffle(DraggableItem waffle)
     {
-        if (waffle == null) return;
-        if (waffleDisplay == null) return;
+        if (waffle == null || waffleDisplay == null) return;
 
-        Debug.Log($"[Oven] WaffleDisplay devuelto. Estado restaurado: {_extractedWaffleState}");
+        Debug.Log($"[Oven] ReturnWaffle → restaurando estado: {_extractedWaffleState}");
 
-        // Restaurar sorting order visual
-        waffleDisplay.sortingOrder = _waffleDisplayOriginalSortingOrder;
-        waffleDisplay.transform.localScale = Vector3.one;
+        // ── Orden crítico: primero SetParent, luego asignar valores locales ──
+        // Si asignáramos localScale ANTES del SetParent, Unity lo recalcularía
+        // al cambiar de padre y quedaría corrupto.
+        waffleDisplay.transform.SetParent(_waffleOriginalParent, worldPositionStays: false);
+        waffleDisplay.transform.localPosition = _waffleLocalPos;
+        waffleDisplay.transform.localScale = _waffleLocalScale;
+        waffleDisplay.transform.localRotation = _waffleLocalRot;
 
-        // Re-parentizar el WaffleDisplay de vuelta al horno
-        waffleDisplay.transform.SetParent(_waffleDisplayOriginalParent, worldPositionStays: false);
-        waffleDisplay.transform.localPosition = _waffleDisplayLocalPos;
+        Debug.Log($"[Oven] ReturnWaffle — localScale restaurado: {_waffleLocalScale}");
 
-        // Restaurar sprite segun el estado en que estaba el waffle
-        waffleDisplay.sprite = _extractedWaffleState switch
+        // Restaurar sprite
+        Sprite restoreSprite = _extractedWaffleState switch
         {
             OvenState.Overcooked => spriteWaffleOvercooked,
             OvenState.Burned => spriteWaffleBurned,
             _ => spriteWaffleReady
         };
-        waffleDisplay.enabled = true;
+        ShowWaffle(restoreSprite);
 
-        // Restaurar efectos visuales
+        // Restaurar efectos
         if (_extractedWaffleState == OvenState.Burned)
         {
             if (_smokeInstance != null) _smokeInstance.SetActive(true);
@@ -499,7 +482,6 @@ public class Oven : MonoBehaviour, IItemReceiver
 
         SetState(_extractedWaffleState);
 
-        // Reactivar timer si el waffle aun puede degradarse mas
         if (_state == OvenState.Ready || _state == OvenState.Overcooked)
         {
             _timerRunning = true;
@@ -507,22 +489,18 @@ public class Oven : MonoBehaviour, IItemReceiver
         }
 
         _extractedWaffle = null;
-
-        // Quitar el DraggableItem añadido en runtime un frame despues
-        // (para no destruirlo mientras aun esta en su propia pila de llamadas)
         StartCoroutine(RemoveDraggableNextFrame(waffle));
     }
 
-    private System.Collections.IEnumerator RemoveDraggableNextFrame(DraggableItem di)
+    private IEnumerator RemoveDraggableNextFrame(DraggableItem di)
     {
         yield return null;
-        if (di != null)
-            Destroy(di);
+        if (di != null) Destroy(di);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
     // MEJORAS
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
 
     public void Unlock()
     {
@@ -530,9 +508,9 @@ public class Oven : MonoBehaviour, IItemReceiver
         if (lockedOverlay != null) lockedOverlay.SetActive(false);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
     // BARRA DE CALOR
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
 
     private void UpdateCookingBar()
     {
@@ -563,25 +541,41 @@ public class Oven : MonoBehaviour, IItemReceiver
         if (cookingBarFill != null) cookingBarFill.color = barColor;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
     // HELPERS
-    // ═══════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════
 
-    private void SetAnimatorTrigger(string paramName)
+    /// <summary>
+    /// Activa el waffleDisplay y asigna el sprite al waffleRenderer.
+    /// waffleRenderer es un campo explícito del Inspector — nunca se busca
+    /// dinámicamente, así que siempre apunta al objeto correcto.
+    /// </summary>
+    private void ShowWaffle(Sprite sprite)
     {
-        if (waffleraAnimator != null)
-            waffleraAnimator.SetTrigger(paramName);
+        if (waffleDisplay != null)
+            waffleDisplay.SetActive(true);
+
+        if (waffleRenderer != null)
+            waffleRenderer.sprite = sprite;
+        else
+            Debug.LogError("[Oven] ShowWaffle: waffleRenderer es null. " +
+                           "Asigna el SpriteRenderer del waffle en el Inspector.");
     }
 
-    private void SetAnimatorBool(string paramName, bool value)
+    private void SetAnimatorTrigger(string p)
     {
-        if (waffleraAnimator != null)
-            waffleraAnimator.SetBool(paramName, value);
+        if (waffleraAnimator != null) waffleraAnimator.SetTrigger(p);
     }
 
-    private void SetState(OvenState newState)
+    private void SetAnimatorBool(string p, bool v)
     {
-        _state = newState;
+        if (waffleraAnimator != null) waffleraAnimator.SetBool(p, v);
+    }
+
+    private void SetState(OvenState s)
+    {
+        _state = s;
+        Debug.Log($"[Oven] Estado → {s}");
     }
 }
 
@@ -590,20 +584,12 @@ public class Oven : MonoBehaviour, IItemReceiver
 // ═══════════════════════════════════════════════════════════════════════
 
 /// <summary>
-/// Componente puente para cuando el Animator vive en un hijo separado
-/// (AnimatedLayer) y los Animation Events no alcanzan el Oven del padre.
-///
-/// Setup:
-///   1. Añadir al mismo GameObject que tiene el Animator (hijo AnimatedLayer).
-///   2. En el Oven (padre), arrastrar ese hijo al campo "Animator Event Relay".
-///   3. El Animation Event apunta a la función "OnWaffleReveal".
+/// Puente para Animation Events cuando el Animator vive en un hijo (AnimatedLayer).
+/// Añadir al GameObject del Animator. Asignar en el campo "animatorEventRelay" del Oven.
 /// </summary>
 public class OvenAnimatorEventRelay : MonoBehaviour
 {
     private Oven _owner;
-
     public void SetOwner(Oven owner) => _owner = owner;
-
-    /// <summary>Animation Event — configurar en WaffleraOpen.anim.</summary>
     public void OnWaffleReveal() => _owner?.OnWaffleReveal();
 }
