@@ -10,7 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 2217284629334992033}
   - component: {fileID: 5964739104786639330}
-  - component: {fileID: 5423511748221816278}
+  - component: {fileID: 6475163989072252342}
   m_Layer: 0
   m_Name: Honey
   m_TagString: Untagged
@@ -70,7 +70,7 @@ CapsuleCollider2D:
   m_Offset: {x: 0, y: 0}
   m_Size: {x: 11.15, y: 12.1}
   m_Direction: 0
---- !u!114 &5423511748221816278
+--- !u!114 &6475163989072252342
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -79,16 +79,17 @@ MonoBehaviour:
   m_GameObject: {fileID: 2531891290531912348}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c8ad61d488cd0b849b09714a0ef1f0de, type: 3}
+  m_Script: {fileID: 11500000, guid: 97dac3269f9592144b40ded518951768, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  producedItemType: 5
-  itemPrefab: {fileID: 0}
-  sourceAnimator: {fileID: 0}
-  selectTrigger: 
-  animationDuration: 0.3
-  spawnDuringAnimation: 1
-  selectParticle: {fileID: 0}
+  honeyAnimator: {fileID: 3233967809207429084}
+  openDuration: 0.35
+  closeDuration: 0.3
+  triggerOpen: DoOpen
+  triggerClose: DoClose
+  triggerIdle: DoIdle
+  honeyItemPrefab: {fileID: 2531891290531912348, guid: fd8b4d065600831458eb50b470b30838, type: 3}
+  pourParticle: {fileID: 0}
 --- !u!1 &4275208465460506393
 GameObject:
   m_ObjectHideFlags: 0
@@ -130,6 +131,7 @@ GameObject:
   m_Component:
   - component: {fileID: 5622596227505526929}
   - component: {fileID: 7900820540362713964}
+  - component: {fileID: 3233967809207429084}
   m_Layer: 0
   m_Name: HoneySourceBody
   m_TagString: Untagged
@@ -204,3 +206,24 @@ SpriteRenderer:
   m_WasSpriteAssigned: 1
   m_MaskInteraction: 0
   m_SpriteSortPoint: 0
+--- !u!95 &3233967809207429084
+Animator:
+  serializedVersion: 5
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6436341873330157412}
+  m_Enabled: 0
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: 800d95824450b5841b97658e56de8d25, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
