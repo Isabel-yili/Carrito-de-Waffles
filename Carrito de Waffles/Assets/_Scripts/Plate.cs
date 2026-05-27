@@ -13,7 +13,6 @@ public class PlateRecipe
     public bool hasWaffle;
     public WaffleCookState cookState = WaffleCookState.None;
 
-    // Toppings — el ORDEN aquí NO importa; ToSpriteKey() siempre los normaliza.
     public bool vanilla;
     public bool strawberry;
     public bool chocolate;
@@ -21,69 +20,27 @@ public class PlateRecipe
 
     public bool HasAnyIceCream => vanilla || strawberry || chocolate;
 
-    // ─────────────────────────────────────────────────────────────
-    // RESOLVE — qué RecipeType representa esta combinación
-    // ─────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Devuelve el RecipeType completado, o null si el plato no tiene aún
-    /// una receta entregable (vacío, o waffle quemado sin toppings).
-    /// </summary>
     public RecipeType? Resolve()
     {
         if (!hasWaffle && !HasAnyIceCream && !honey) return null;
-
-        // Waffle quemado sin toppings → no entregable al delivery
-        if (hasWaffle && cookState == WaffleCookState.Burned && !HasAnyIceCream && !honey)
-            return null;
-
+        if (hasWaffle && cookState == WaffleCookState.Burned && !HasAnyIceCream && !honey) return null;
         if (!hasWaffle && (HasAnyIceCream || honey)) return RecipeType.IceCreamAlone;
         if (hasWaffle && !HasAnyIceCream && !honey) return RecipeType.WaffleSimple;
         if (hasWaffle && HasAnyIceCream) return RecipeType.WaffleWithIceCream;
         if (hasWaffle && honey && !HasAnyIceCream) return RecipeType.WaffleWithHoneyButter;
-
         return null;
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // TO SPRITE KEY — convención CANÓNICA de claves
-    // ─────────────────────────────────────────────────────────────
-    //
-    // REGLAS OBLIGATORIAS:
-    //   1. Orden fijo de ingredientes: Vanilla → Strawberry → Chocolate → Honey
-    //      independientemente del orden en que el jugador los agregó.
-    //   2. Formato con waffle:    [CookState]_[Ingredientes]
-    //      Formato sin waffle:   IceCream_[Ingredientes]
-    //      Solo honey sin waffle: Honey
-    //   3. Sin toppings:          Perfect | Overcooked | Burned
-    //   4. Plato vacío:           Empty
-    //
-    // EJEMPLOS:
-    //   Waffle perfecto solo               → "Perfect"
-    //   Waffle overcooked + vainilla       → "Overcooked_Vanilla"
-    //   Waffle perfecto + chocolate + miel → "Perfect_ChocolateHoney"
-    //   Chocolate + vainilla (sin waffle)  → "IceCream_VanillaChocolate"  ← SIEMPRE Vanilla primero
-    //   Solo miel (sin waffle, edge case)  → "Honey"
-    //   Plato vacío                        → "Empty"
-
     public string ToSpriteKey()
     {
-        // ── Plato vacío ───────────────────────────────────────────
-        if (!hasWaffle && !HasAnyIceCream && !honey)
-            return "Empty";
+        if (!hasWaffle && !HasAnyIceCream && !honey) return "Empty";
 
-        // ── Sin waffle ────────────────────────────────────────────
         if (!hasWaffle)
         {
-            // Solo miel (edge case)
             if (!HasAnyIceCream && honey) return "Honey";
-
-            // Helados ± miel
-            string suffix = BuildCanonicalSuffix(vanilla, strawberry, chocolate, honey);
-            return $"IceCream_{suffix}";
+            return $"IceCream_{BuildCanonicalSuffix(vanilla, strawberry, chocolate, honey)}";
         }
 
-        // ── Con waffle ────────────────────────────────────────────
         string cook = cookState switch
         {
             WaffleCookState.Perfect => "Perfect",
@@ -92,25 +49,12 @@ public class PlateRecipe
             _ => "Perfect"
         };
 
-        // Sin toppings
         if (!HasAnyIceCream && !honey) return cook;
-
-        // Con toppings
-        string toppings = BuildCanonicalSuffix(vanilla, strawberry, chocolate, honey);
-        return $"{cook}_{toppings}";
+        return $"{cook}_{BuildCanonicalSuffix(vanilla, strawberry, chocolate, honey)}";
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // HELPER — construye el sufijo en ORDEN CANÓNICO
-    //   Vanilla → Strawberry → Chocolate → Honey
-    // Este método es la única fuente de verdad del orden.
-    // ─────────────────────────────────────────────────────────────
-
-    private static string BuildCanonicalSuffix(
-        bool v, bool s, bool c, bool h)
+    private static string BuildCanonicalSuffix(bool v, bool s, bool c, bool h)
     {
-        // System.Text.StringBuilder no disponible sin using — usar concatenación simple.
-        // El resultado siempre tiene el mismo orden, sin importar el estado de los flags.
         string result = "";
         if (v) result += "Vanilla";
         if (s) result += "Strawberry";
@@ -127,83 +71,36 @@ public class PlateRecipe
 [System.Serializable]
 public class PlateVisualEntry
 {
-    [Tooltip(
-        "Clave canónica generada por PlateRecipe.ToSpriteKey().\n\n" +
-        "LISTA COMPLETA (64 combinaciones + Empty):\n\n" +
-
-        "── VACÍO ──────────────────────\n" +
-        "Empty\n\n" +
-
-        "── A: SOLO WAFFLE ─────────────\n" +
-        "Perfect  |  Overcooked  |  Burned\n\n" +
-
-        "── B: WAFFLE + 1 INGREDIENTE ──\n" +
-        "Perfect_Vanilla         Overcooked_Vanilla         Burned_Vanilla\n" +
-        "Perfect_Strawberry      Overcooked_Strawberry      Burned_Strawberry\n" +
-        "Perfect_Chocolate       Overcooked_Chocolate       Burned_Chocolate\n" +
-        "Perfect_Honey           Overcooked_Honey           Burned_Honey\n\n" +
-
-        "── C: WAFFLE + 2 INGREDIENTES ─\n" +
-        "Perfect_VanillaStrawberry      Overcooked_VanillaStrawberry      Burned_VanillaStrawberry\n" +
-        "Perfect_VanillaChocolate       Overcooked_VanillaChocolate       Burned_VanillaChocolate\n" +
-        "Perfect_VanillaHoney           Overcooked_VanillaHoney           Burned_VanillaHoney\n" +
-        "Perfect_StrawberryChocolate    Overcooked_StrawberryChocolate    Burned_StrawberryChocolate\n" +
-        "Perfect_StrawberryHoney        Overcooked_StrawberryHoney        Burned_StrawberryHoney\n" +
-        "Perfect_ChocolateHoney         Overcooked_ChocolateHoney         Burned_ChocolateHoney\n\n" +
-
-        "── D: WAFFLE + 3 INGREDIENTES ─\n" +
-        "Perfect_VanillaStrawberryChocolate    Overcooked_VanillaStrawberryChocolate    Burned_VanillaStrawberryChocolate\n" +
-        "Perfect_VanillaStrawberryHoney        Overcooked_VanillaStrawberryHoney        Burned_VanillaStrawberryHoney\n" +
-        "Perfect_VanillaChocolateHoney         Overcooked_VanillaChocolateHoney         Burned_VanillaChocolateHoney\n" +
-        "Perfect_StrawberryChocolateHoney      Overcooked_StrawberryChocolateHoney      Burned_StrawberryChocolateHoney\n\n" +
-
-        "── E: WAFFLE + TODOS ──────────\n" +
-        "Perfect_VanillaStrawberryChocolateHoney\n" +
-        "Overcooked_VanillaStrawberryChocolateHoney\n" +
-        "Burned_VanillaStrawberryChocolateHoney\n\n" +
-
-        "── F: HELADOS SIN WAFFLE ──────\n" +
-        "IceCream_Vanilla            IceCream_Strawberry           IceCream_Chocolate\n" +
-        "IceCream_VanillaStrawberry  IceCream_VanillaChocolate     IceCream_VanillaHoney\n" +
-        "IceCream_StrawberryChocolate  IceCream_StrawberryHoney    IceCream_ChocolateHoney\n" +
-        "IceCream_VanillaStrawberryChocolate  IceCream_VanillaStrawberryHoney\n" +
-        "IceCream_VanillaChocolateHoney  IceCream_StrawberryChocolateHoney\n" +
-        "IceCream_VanillaStrawberryChocolateHoney\n" +
-        "Honey   (solo miel, sin waffle ni helado — edge case)")]
+    [Tooltip("Clave canónica generada por PlateRecipe.ToSpriteKey().\n\nVer Plate.cs para lista completa de 64+ claves.")]
     public string key;
     public Sprite sprite;
 }
 
 /// <summary>
-/// PLATO v4 — Arquitectura visual por sprites únicos.
+/// PLATO v5 — Fix de estado consumido post-entrega.
 ///
-/// PRINCIPIO CENTRAL:
-///   El Plate NO contiene objetos físicos de ingredientes.
-///   Cuando recibe un ingrediente:
-///     1. Guarda el estado en PlateRecipe (hasWaffle, cookState, vanilla, etc.).
-///     2. Destruye el DraggableItem recibido (o desactiva el WaffleDisplay del Oven).
-///     3. Llama UpdateVisual() → genera la clave canónica → cambia UN SpriteRenderer.
+/// CAMBIO PRINCIPAL v5:
+///   ConsumeAndSpawnNew() ahora marca el plate como consumido
+///   (_isConsumed = true) ANTES de destruirlo, lo que hace que
+///   CanReceive() devuelva false y el Update() del DraggableItem
+///   no intente procesar más clicks sobre este objeto en el frame
+///   que queda vivo tras llamar Destroy().
 ///
-/// REGLA DE ORO:
-///   La clave siempre sigue el orden Vanilla → Strawberry → Chocolate → Honey,
-///   sin importar el orden en que el jugador los agregó.
-///
-/// JERARQUÍA DEL PREFAB:
-///   Plate           ← Plate + DraggableItem + Collider2D
-///   └── PlateVisual ← SpriteRenderer (asignar a plateVisualRenderer)
-///
-/// SETUP DE SPRITES:
-///   Llenar "plateSprites" con las 64 combinaciones + "Empty".
-///   Si una clave no tiene sprite asignado, se muestra spriteFallback
-///   y aparece un warning en consola con la clave exacta faltante.
+///   Flujo completo de entrega correcta:
+///     DeliveryPlatform.OnCorrectDelivery()
+///       → DragManager.OnItemReleased(item)    [limpia _hasSelectedItem]
+///       → gameManager.AddMoney()
+///       → plate.ConsumeAndSpawnNew()
+///           → _isConsumed = true              [bloquea nuevas interacciones]
+///           → Instantiate(platePrefab)        [nuevo plate en mesa]
+///           → Destroy(gameObject)             [destruye este plate]
 ///
 /// DRAG DEL PLATE:
-///   persistentDrag = true → el Plate se queda donde se suelta.
-///   Click derecho / Escape → vuelve al origen.
+///   persistentDrag=true  → el Plate queda donde se suelta.
+///   Click derecho/Escape → vuelve al origen.
 ///
-/// SPAWN DE NUEVO PLATE:
-///   SOLO ocurre cuando DeliveryPlatform confirma entrega correcta
-///   y llama ConsumeAndSpawnNew().
+/// VISUAL:
+///   Un solo SpriteRenderer (plateVisualRenderer), clave canónica.
 /// </summary>
 [RequireComponent(typeof(Collider2D))]
 [RequireComponent(typeof(DraggableItem))]
@@ -212,13 +109,13 @@ public class Plate : MonoBehaviour, IItemReceiver
     // ─── Inspector ─────────────────────────────────────────────────
 
     [Header("Visual")]
-    [Tooltip("SpriteRenderer del hijo 'PlateVisual' — muestra el estado actual")]
+    [Tooltip("SpriteRenderer del hijo 'PlateVisual'")]
     public SpriteRenderer plateVisualRenderer;
 
     [Tooltip("64 combinaciones + Empty. Clave = PlateRecipe.ToSpriteKey()")]
     public PlateVisualEntry[] plateSprites;
 
-    [Tooltip("Sprite de fallback cuando la clave no está en la lista (útil en desarrollo)")]
+    [Tooltip("Sprite de fallback cuando la clave no está en la lista")]
     public Sprite spriteFallback;
 
     [Header("Spawn del próximo plato")]
@@ -231,13 +128,13 @@ public class Plate : MonoBehaviour, IItemReceiver
 
     private PlateRecipe _recipe = new PlateRecipe();
     private DraggableItem _myDraggable;
+    private bool _isConsumed = false;  // true tras ConsumeAndSpawnNew()
 
-    // Propiedades públicas
     public PlateRecipe Recipe => _recipe;
     public bool IsEmpty => !_recipe.hasWaffle && !_recipe.HasAnyIceCream && !_recipe.honey;
-    public bool HasCompletedRecipe => _recipe.Resolve().HasValue;
+    public bool HasCompletedRecipe => !_isConsumed && _recipe.Resolve().HasValue;
     public RecipeType? CompletedRecipe => _recipe.Resolve();
-    public bool HasRecipe => HasCompletedRecipe;   // compatibilidad DeliveryPlatform
+    public bool HasRecipe => HasCompletedRecipe;
 
     // ═══════════════════════════════════════════════════════════════
     // CICLO DE VIDA
@@ -247,7 +144,7 @@ public class Plate : MonoBehaviour, IItemReceiver
     {
         _myDraggable = GetComponent<DraggableItem>();
 
-        // MODO B — Persistent Drag
+        // Modo B — Persistent Drag
         _myDraggable.isDraggable = true;
         _myDraggable.persistentDrag = true;
         _myDraggable.destroyOnFailedDrop = false;
@@ -261,14 +158,15 @@ public class Plate : MonoBehaviour, IItemReceiver
 
     void OnMouseDown()
     {
+        if (_isConsumed) return;  // plate ya entregado, ignorar clicks
+
         DragManager.Instance?.MarkClickHandled();
 
-        // Si el jugador lleva algo, el Update() de ese DraggableItem procesará
-        // la entrega vía TryDeliverToTarget(). No duplicar aquí.
+        // Si el jugador lleva algo, TryDeliverToTarget() del DraggableItem activo lo maneja
         if (DragManager.Instance != null && DragManager.Instance.HasSelectedItem)
             return;
 
-        // Sin item en mano → tomar el Plate
+        // Sin item en mano → tomar el plate
         DragManager.Instance?.SelectItem(_myDraggable);
     }
 
@@ -278,15 +176,15 @@ public class Plate : MonoBehaviour, IItemReceiver
 
     public bool CanReceive(DraggableItem item)
     {
+        if (_isConsumed) return false;
+
         switch (item.itemType)
         {
-            // Waffles: solo uno
             case ItemType.WaffleReady:
             case ItemType.WaffleOvercooked:
             case ItemType.WaffleBurned:
                 return !_recipe.hasWaffle;
 
-            // Helados: con waffle, o plato totalmente vacío (helado solo)
             case ItemType.IceCreamVanilla:
                 return !_recipe.vanilla
                     && (_recipe.hasWaffle || (!_recipe.HasAnyIceCream && !_recipe.honey));
@@ -299,7 +197,6 @@ public class Plate : MonoBehaviour, IItemReceiver
                 return !_recipe.chocolate
                     && (_recipe.hasWaffle || (!_recipe.HasAnyIceCream && !_recipe.honey));
 
-            // Miel: solo sobre waffle
             case ItemType.HoneyButter:
                 return !_recipe.honey && _recipe.hasWaffle;
 
@@ -314,7 +211,6 @@ public class Plate : MonoBehaviour, IItemReceiver
         ItemType type = item.itemType;
         item.ClearOriginOven();
 
-        // ── Destruir el item visual del cursor ────────────────────
         bool isWaffle = type == ItemType.WaffleReady
                      || type == ItemType.WaffleOvercooked
                      || type == ItemType.WaffleBurned;
@@ -332,12 +228,8 @@ public class Plate : MonoBehaviour, IItemReceiver
             Destroy(item.gameObject);
         }
 
-        // ── Actualizar receta ─────────────────────────────────────
         ApplyIngredient(type);
-
-        // ── Cambiar sprite — UN solo SpriteRenderer ───────────────
         UpdateVisual();
-
         AudioManager.Instance?.PlaySound(SoundType.ItemPlaced);
 
         if (HasCompletedRecipe)
@@ -347,22 +239,16 @@ public class Plate : MonoBehaviour, IItemReceiver
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // RECETA — lógica interna
+    // RECETA
     // ═══════════════════════════════════════════════════════════════
 
     private void ApplyIngredient(ItemType type)
     {
         switch (type)
         {
-            case ItemType.WaffleReady:
-                _recipe.hasWaffle = true;
-                _recipe.cookState = WaffleCookState.Perfect; break;
-            case ItemType.WaffleOvercooked:
-                _recipe.hasWaffle = true;
-                _recipe.cookState = WaffleCookState.Overcooked; break;
-            case ItemType.WaffleBurned:
-                _recipe.hasWaffle = true;
-                _recipe.cookState = WaffleCookState.Burned; break;
+            case ItemType.WaffleReady: _recipe.hasWaffle = true; _recipe.cookState = WaffleCookState.Perfect; break;
+            case ItemType.WaffleOvercooked: _recipe.hasWaffle = true; _recipe.cookState = WaffleCookState.Overcooked; break;
+            case ItemType.WaffleBurned: _recipe.hasWaffle = true; _recipe.cookState = WaffleCookState.Burned; break;
             case ItemType.IceCreamVanilla: _recipe.vanilla = true; break;
             case ItemType.IceCreamStrawberry: _recipe.strawberry = true; break;
             case ItemType.IceCreamChocolate: _recipe.chocolate = true; break;
@@ -378,7 +264,7 @@ public class Plate : MonoBehaviour, IItemReceiver
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // VISUAL — UN SpriteRenderer, clave canónica
+    // VISUAL
     // ═══════════════════════════════════════════════════════════════
 
     private void UpdateVisual()
@@ -399,9 +285,7 @@ public class Plate : MonoBehaviour, IItemReceiver
         else
         {
             plateVisualRenderer.sprite = spriteFallback;
-            // Warning explícito con la clave exacta que falta — facilita añadir assets
-            Debug.LogWarning($"[Plate] Sprite no encontrado para '{key}' — usando fallback. " +
-                             $"Añadir entrada con esa clave exacta en plateSprites[].");
+            Debug.LogWarning($"[Plate] Sprite no encontrado para '{key}' — usando fallback.");
         }
     }
 
@@ -414,24 +298,34 @@ public class Plate : MonoBehaviour, IItemReceiver
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // SPAWN DE NUEVO PLATE — solo tras entrega correcta
+    // CONSUME — llamado SOLO por DeliveryPlatform.OnCorrectDelivery()
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Llamado EXCLUSIVAMENTE por DeliveryPlatform.OnCorrectDelivery().
-    /// Instancia un nuevo Plate en la mesa y destruye este.
+    /// Marca el plate como consumido, instancia uno nuevo en la mesa, y se destruye.
+    /// PRECONDICIÓN: DragManager.OnItemReleased() ya fue llamado antes de este método.
     /// </summary>
     public void ConsumeAndSpawnNew()
     {
+        // Marcar consumido para que ninguna interacción en el frame de destrucción
+        // intente procesar este objeto
+        _isConsumed = true;
+
+        // Asegurarse de que el DraggableItem no sigue arrastrando
+        if (_myDraggable != null)
+            _myDraggable.StopCarrying();
+
+        // Instanciar el nuevo plate
         if (platePrefab != null && plateSpawnPoint != null)
         {
             Instantiate(platePrefab, plateSpawnPoint.position, Quaternion.identity);
-            Debug.Log("[Plate] Nuevo plato en mesa.");
+            Debug.Log("[Plate] Nuevo plato spawneado en mesa.");
         }
         else
         {
-            Debug.LogWarning("[Plate] platePrefab o plateSpawnPoint no asignados.");
+            Debug.LogWarning("[Plate] platePrefab o plateSpawnPoint no asignados — no se spawneó nuevo plato.");
         }
+
         Destroy(gameObject);
     }
 
@@ -442,6 +336,7 @@ public class Plate : MonoBehaviour, IItemReceiver
     public void ClearPlate()
     {
         _recipe = new PlateRecipe();
+        _isConsumed = false;
         UpdateVisual();
         Debug.Log("[Plate] Limpiado.");
     }
@@ -457,37 +352,28 @@ public class Plate : MonoBehaviour, IItemReceiver
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // EDITOR — utilidades de desarrollo
+    // EDITOR
     // ═══════════════════════════════════════════════════════════════
 
 #if UNITY_EDITOR
     [Header("— Editor / Debug —")]
-    [Tooltip("Clave a previsualizar. Pulsar 'Preview Sprite' en el menú contextual del componente.")]
     public string debugPreviewKey = "Perfect_VanillaChocolate";
 
     [ContextMenu("Preview Sprite")]
     private void EditorPreviewSprite()
     {
-        if (plateVisualRenderer == null)
-        {
-            Debug.LogWarning("[Plate] plateVisualRenderer no asignado.");
-            return;
-        }
+        if (plateVisualRenderer == null) { Debug.LogWarning("[Plate] plateVisualRenderer no asignado."); return; }
         Sprite s = FindSprite(debugPreviewKey);
         plateVisualRenderer.sprite = s != null ? s : spriteFallback;
         Debug.Log(s != null
             ? $"[Plate] Preview OK: '{debugPreviewKey}'"
-            : $"[Plate] Clave '{debugPreviewKey}' no encontrada en plateSprites[].");
+            : $"[Plate] Clave '{debugPreviewKey}' no encontrada.");
     }
 
     [ContextMenu("Log All Defined Keys")]
     private void EditorLogAllKeys()
     {
-        if (plateSprites == null || plateSprites.Length == 0)
-        {
-            Debug.Log("[Plate] plateSprites[] está vacío.");
-            return;
-        }
+        if (plateSprites == null || plateSprites.Length == 0) { Debug.Log("[Plate] plateSprites[] vacío."); return; }
         System.Text.StringBuilder sb = new System.Text.StringBuilder();
         sb.AppendLine($"[Plate] {plateSprites.Length} claves definidas:");
         foreach (var e in plateSprites)
@@ -498,34 +384,27 @@ public class Plate : MonoBehaviour, IItemReceiver
     [ContextMenu("Validate All 64 Keys")]
     private void EditorValidateAllKeys()
     {
-        // Lista canónica completa de 64 claves + Empty
         string[] canonical = {
             "Empty",
-            // A — Solo waffle
             "Perfect", "Overcooked", "Burned",
-            // B — Waffle + 1
             "Perfect_Vanilla","Perfect_Strawberry","Perfect_Chocolate","Perfect_Honey",
             "Overcooked_Vanilla","Overcooked_Strawberry","Overcooked_Chocolate","Overcooked_Honey",
             "Burned_Vanilla","Burned_Strawberry","Burned_Chocolate","Burned_Honey",
-            // C — Waffle + 2
             "Perfect_VanillaStrawberry","Perfect_VanillaChocolate","Perfect_VanillaHoney",
             "Perfect_StrawberryChocolate","Perfect_StrawberryHoney","Perfect_ChocolateHoney",
             "Overcooked_VanillaStrawberry","Overcooked_VanillaChocolate","Overcooked_VanillaHoney",
             "Overcooked_StrawberryChocolate","Overcooked_StrawberryHoney","Overcooked_ChocolateHoney",
             "Burned_VanillaStrawberry","Burned_VanillaChocolate","Burned_VanillaHoney",
             "Burned_StrawberryChocolate","Burned_StrawberryHoney","Burned_ChocolateHoney",
-            // D — Waffle + 3
             "Perfect_VanillaStrawberryChocolate","Perfect_VanillaStrawberryHoney",
             "Perfect_VanillaChocolateHoney","Perfect_StrawberryChocolateHoney",
             "Overcooked_VanillaStrawberryChocolate","Overcooked_VanillaStrawberryHoney",
             "Overcooked_VanillaChocolateHoney","Overcooked_StrawberryChocolateHoney",
             "Burned_VanillaStrawberryChocolate","Burned_VanillaStrawberryHoney",
             "Burned_VanillaChocolateHoney","Burned_StrawberryChocolateHoney",
-            // E — Waffle + todos
             "Perfect_VanillaStrawberryChocolateHoney",
             "Overcooked_VanillaStrawberryChocolateHoney",
             "Burned_VanillaStrawberryChocolateHoney",
-            // F — Helados sin waffle
             "IceCream_Vanilla","IceCream_Strawberry","IceCream_Chocolate",
             "IceCream_VanillaStrawberry","IceCream_VanillaChocolate","IceCream_VanillaHoney",
             "IceCream_StrawberryChocolate","IceCream_StrawberryHoney","IceCream_ChocolateHoney",
@@ -552,7 +431,6 @@ public class Plate : MonoBehaviour, IItemReceiver
                 if (!keyExists) { sb.AppendLine($"  ❌ FALTA clave: '{k}'"); missing++; }
                 else { sb.AppendLine($"  ⚠️  Clave '{k}' existe pero sprite es NULL"); nullSprite++; }
             }
-            // else OK — no loguear las 64 para no saturar
         }
 
         if (missing == 0 && nullSprite == 0)

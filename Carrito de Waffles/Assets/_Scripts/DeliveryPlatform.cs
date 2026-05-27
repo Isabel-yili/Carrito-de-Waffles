@@ -2,14 +2,27 @@ using UnityEngine;
 using System.Collections;
 
 /// <summary>
-/// PLATAFORMA DE ENTREGA v2 — GDD sección 4.5
+/// PLATAFORMA DE ENTREGA v3 — GDD sección 4.5
 ///
-/// CAMBIOS v2:
-///   - Evalúa WaffleCookState (Perfect/Overcooked/Burned) para recompensa y reacción del cliente.
-///   - Penaliza paciencia de TODOS los clientes activos en entrega incorrecta.
-///   - Llama Plate.ConsumeAndSpawnNew() SÓLO tras entrega correcta.
-///   - NO destruye el Plate automáticamente si el pedido es incorrecto;
-///     el Plate vuelve a la mesa por ReturnToOrigin() del DraggableItem.
+/// FIX CRÍTICO v3:
+///   El flujo de entrega exitosa ahora sigue el orden correcto obligatorio:
+///
+///     1. Evaluar pedido (OrderManager)
+///     2. Marcar el plate como consumido (bloquear más drops sobre él)
+///     3. Limpiar DragManager (OnItemReleased) — ANTES de destruir el objeto
+///     4. Calcular recompensa y aplicarla
+///     5. Feedback visual/sonoro
+///     6. Plate.ConsumeAndSpawnNew() → Destroy(oldPlate) + Instantiate(newPlate)
+///
+///   El paso 3 es el que estaba ausente en v2, causando que el DragManager
+///   quedara bloqueado con _hasSelectedItem = true tras la entrega.
+///
+///   ENTREGA INCORRECTA:
+///   - GameManager.AddError()
+///   - El Plate vuelve a la mesa automáticamente porque:
+///       DraggableItem.HandleFailedDrop() → persistentDrag=true → queda donde se suelta
+///       o MoveToOriginCoroutine() si tiene _originOven == null.
+///   - NO destruimos ni movemos el plate aquí — DraggableItem ya lo maneja.
 /// </summary>
 public class DeliveryPlatform : MonoBehaviour, IItemReceiver
 {
@@ -21,11 +34,8 @@ public class DeliveryPlatform : MonoBehaviour, IItemReceiver
     public Color colorError = new Color(0.9f, 0.2f, 0.2f, 1f);
 
     [Header("Recompensas por calidad (GDD 8.3)")]
-    [Tooltip("Multiplicador de recompensa para waffle Perfect")]
     public float perfectMultiplier = 1.0f;
-    [Tooltip("Multiplicador de recompensa para waffle Overcooked")]
     public float overcookedMultiplier = 0.6f;
-    [Tooltip("Multiplicador de recompensa para waffle Burned (entrega válida si el cliente lo pidió así… raro, pero posible)")]
     public float burnedMultiplier = 0.2f;
 
     [Header("Referencias")]
@@ -54,55 +64,59 @@ public class DeliveryPlatform : MonoBehaviour, IItemReceiver
 
         if (success)
         {
-            OnCorrectDelivery(plate, deliveredRecipe, cookState);
+            OnCorrectDelivery(item, plate, deliveredRecipe, cookState);
         }
         else
         {
             OnIncorrectDelivery(item);
-            // NO destruir el Plate — DraggableItem.HandleFailedDrop() lo devuelve
-            // a la mesa porque destroyOnFailedDrop = false en el Plate.
         }
     }
 
     // ─────────────────────────────────────────────────────────────
-    // RESULTADOS
+    // ENTREGA CORRECTA — orden de operaciones es crítico
     // ─────────────────────────────────────────────────────────────
 
-    private void OnCorrectDelivery(Plate plate, RecipeType recipe, WaffleCookState cookState)
+    private void OnCorrectDelivery(DraggableItem item, Plate plate,
+                                   RecipeType recipe, WaffleCookState cookState)
     {
+        // ── 1. Calcular recompensa ────────────────────────────────
         int baseReward = RecipeRewards.GetReward(recipe);
-
-        // Modificar recompensa según calidad del waffle
         float multiplier = cookState switch
         {
             WaffleCookState.Overcooked => overcookedMultiplier,
             WaffleCookState.Burned => burnedMultiplier,
-            _ => perfectMultiplier   // Perfect o sin waffle
+            _ => perfectMultiplier
         };
-
         int finalReward = Mathf.RoundToInt(baseReward * multiplier);
+
+        // ── 2. Limpiar DragManager ANTES de destruir el objeto ────
+        // Si no hacemos esto, DragManager._hasSelectedItem queda true
+        // para siempre y el juego se traba.
+        // OnItemReleased llama item.StopCarrying() internamente.
+        DragManager.Instance?.OnItemReleased(item);
+
+        // ── 3. Aplicar dinero ─────────────────────────────────────
         gameManager?.AddMoney(finalReward);
 
-        // Feedback según calidad
-        if (cookState == WaffleCookState.Overcooked || cookState == WaffleCookState.Burned)
-        {
-            // Cliente disgustado — recibe el pedido pero no está feliz
-            FeedbackManager.Instance?.ShowSuccessDelivery(transform.position, finalReward);
-            AudioManager.Instance?.PlaySound(SoundType.DeliverySuccess);
-            Debug.Log($"[DeliveryPlatform] ✅ Entregado (calidad baja: {cookState}) — ${finalReward}");
-        }
-        else
-        {
-            FeedbackManager.Instance?.ShowSuccessDelivery(transform.position, finalReward);
-            AudioManager.Instance?.PlaySound(SoundType.DeliverySuccess);
-            Debug.Log($"[DeliveryPlatform] ✅ Entregado perfectamente — ${finalReward}");
-        }
-
+        // ── 4. Feedback ───────────────────────────────────────────
+        FeedbackManager.Instance?.ShowSuccessDelivery(transform.position, finalReward);
+        AudioManager.Instance?.PlaySound(SoundType.DeliverySuccess);
         StartCoroutine(FlashColor(colorSuccess));
 
-        // ÚNICO punto donde se genera un nuevo Plate
+        string qualityLog = cookState == WaffleCookState.Perfect
+            ? "perfectamente"
+            : $"calidad baja ({cookState})";
+        Debug.Log($"[DeliveryPlatform] ✅ Entregado {qualityLog} — ${finalReward}");
+
+        // ── 5. Consumir plate e instanciar uno nuevo ──────────────
+        // ConsumeAndSpawnNew() llama Destroy(gameObject) internamente.
+        // DEBE ser lo último porque destruye el objeto al que apunta "item".
         plate.ConsumeAndSpawnNew();
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // ENTREGA INCORRECTA
+    // ─────────────────────────────────────────────────────────────
 
     private void OnIncorrectDelivery(DraggableItem item)
     {
@@ -110,23 +124,24 @@ public class DeliveryPlatform : MonoBehaviour, IItemReceiver
 
         FeedbackManager.Instance?.ShowErrorDelivery(transform.position);
         AudioManager.Instance?.PlaySound(SoundType.DeliveryError);
-
         StartCoroutine(FlashColor(colorError));
 
-        // El Plate vuelve a la mesa automáticamente — no lo destruimos aquí.
-        // DraggableItem.TryDeliverToTarget → HandleFailedDrop → MoveToOriginCoroutine.
-        Debug.Log("[DeliveryPlatform] ❌ Pedido incorrecto — el plato regresa a la mesa.");
+        // NO llamamos OnItemReleased aquí.
+        // DraggableItem.TryDeliverToTarget() ya llamó OnItemReleased()
+        // después de que ReceiveItem() devolvió el control.
+        // El plate vuelve a la mesa por HandleFailedDrop().
+
+        Debug.Log("[DeliveryPlatform] ❌ Pedido incorrecto — el plate regresa a la mesa.");
     }
 
     // ─────────────────────────────────────────────────────────────
-    // HIGHLIGHT
+    // HIGHLIGHT — feedback visual al arrastrar el plate encima
     // ─────────────────────────────────────────────────────────────
 
     void OnTriggerEnter2D(Collider2D other)
     {
         Plate plate = other.GetComponent<Plate>();
-        DraggableItem dragging = other.GetComponent<DraggableItem>();
-        if (dragging != null && plate != null && plate.HasRecipe)
+        if (plate != null && plate.HasRecipe)
             SetColor(colorHighlight);
     }
 
@@ -136,7 +151,7 @@ public class DeliveryPlatform : MonoBehaviour, IItemReceiver
     }
 
     // ─────────────────────────────────────────────────────────────
-    // VISUAL HELPERS
+    // HELPERS
     // ─────────────────────────────────────────────────────────────
 
     private IEnumerator FlashColor(Color flashColor)
@@ -153,18 +168,19 @@ public class DeliveryPlatform : MonoBehaviour, IItemReceiver
     }
 }
 
-/// <summary>Recompensas base por receta — GDD sección 8.3</summary>
+// ─────────────────────────────────────────────────────────────────
+// RECOMPENSAS — GDD sección 8.3
+// ─────────────────────────────────────────────────────────────────
+
+/// <summary>Recompensas base por receta.</summary>
 public static class RecipeRewards
 {
-    public static int GetReward(RecipeType recipe)
+    public static int GetReward(RecipeType recipe) => recipe switch
     {
-        return recipe switch
-        {
-            RecipeType.WaffleSimple => 10,
-            RecipeType.IceCreamAlone => 8,
-            RecipeType.WaffleWithIceCream => 15,
-            RecipeType.WaffleWithHoneyButter => 12,
-            _ => 0
-        };
-    }
+        RecipeType.WaffleSimple => 10,
+        RecipeType.IceCreamAlone => 8,
+        RecipeType.WaffleWithIceCream => 15,
+        RecipeType.WaffleWithHoneyButter => 12,
+        _ => 0
+    };
 }

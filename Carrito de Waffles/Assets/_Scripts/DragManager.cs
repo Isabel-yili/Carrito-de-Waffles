@@ -2,30 +2,27 @@ using UnityEngine;
 using System;
 
 /// <summary>
-/// DRAG MANAGER v2 — gestión centralizada de input.
+/// DRAG MANAGER v3 — gestión centralizada de input.
 ///
-/// CAMBIO PRINCIPAL respecto a v1:
-///   El click izquierdo (cuando no hay ítem en mano) ahora se procesa aquí
-///   mediante Physics2D.OverlapPoint, en lugar de depender de OnMouseDown()
-///   en cada objeto individual.
+/// CAMBIO v3:
+///   NotifySuccessfulPlacement() ahora detecta si el receiver es una
+///   DeliveryPlatform. En ese caso llama item.MarkReleaseHandledByReceiver()
+///   para que DraggableItem.TryDeliverToTarget() sepa que NO debe llamar
+///   OnItemReleased() por segunda vez (ya lo hará DeliveryPlatform).
 ///
-///   Esto resuelve el problema donde el Collider2D del Oven bloqueaba el
-///   raycast hacia el WaffleDisplay: OnMouseDown solo se dispara en el
-///   PRIMER collider interceptado, pero OverlapPoint devuelve TODOS los
-///   colliders en ese punto, permitiendo buscar el más apropiado.
+///   Para todos los demás receptores (Plate, Oven, ItemSlot, TrashDropZone):
+///   DraggableItem llama OnItemReleased() normalmente después de ReceiveItem().
 ///
 /// FLUJO DEL CLICK (sin ítem en mano):
-///   1. Update() detecta GetMouseButtonDown(0).
-///   2. HandleWorldClick() hace OverlapPoint en la posición del cursor.
-///   3. Busca en los resultados, en orden de prioridad:
+///   1. Update() detecta GetMouseButtonDown(0)
+///   2. HandleWorldClick() hace OverlapPoint en la posición del cursor
+///   3. Busca, en orden de prioridad:
 ///      a. DraggableItem arrastrable → SelectItem()
-///      b. ItemSource → SpawnItem() + OnItemPickedUp()
-///      c. Oven con waffle listo → RequestExtract()
-///   4. Si no encuentra nada interactivo, no hace nada.
+///      b. ItemSource → OnMouseDown() ya lo maneja, no duplicar
+///      c. Oven con waffle → RequestExtract()
 ///
 /// FLUJO DEL CLICK (con ítem en mano):
-///   El DraggableItem activo maneja su propio Update() y llama
-///   TryDeliverToTarget() — sin cambios respecto a v1.
+///   DraggableItem.Update() llama TryDeliverToTarget() → ReceiveItem().
 /// </summary>
 public class DragManager : MonoBehaviour
 {
@@ -48,7 +45,7 @@ public class DragManager : MonoBehaviour
     public event Action<DraggableItem> OnItemDroppedEvent;
     public event Action<DraggableItem, IItemReceiver> OnSuccessfulPlacementEvent;
 
-    // Previene doble-disparo: OnMouseDown de Plate/ItemSource + HandleWorldClick en el mismo frame
+    // Previene doble-disparo: OnMouseDown + HandleWorldClick en el mismo frame
     private bool _clickHandledByOnMouseDown = false;
 
     void Awake()
@@ -58,15 +55,13 @@ public class DragManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Llamado por Plate.OnMouseDown() e ItemSource.OnMouseDown() para indicar
+    /// Llamado por ItemSource.OnMouseDown() / Plate.OnMouseDown() para indicar
     /// que el click de este frame ya fue procesado por Unity's event system.
-    /// Evita que HandleWorldClick lo procese una segunda vez.
     /// </summary>
     public void MarkClickHandled() => _clickHandledByOnMouseDown = true;
 
     void Update()
     {
-        // Limpiar flag al inicio de cada frame
         _clickHandledByOnMouseDown = false;
 
         if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape))
@@ -75,33 +70,22 @@ public class DragManager : MonoBehaviour
             return;
         }
 
-        // Click izquierdo sin ítem en mano → buscar objeto interactivo en el mundo
         if (Input.GetMouseButtonDown(0) && !_hasSelectedItem)
-        {
             HandleWorldClick();
-        }
-        // Con ítem en mano, el DraggableItem activo maneja su propio Update()
     }
 
     // ═════════════════════════════════════════════════
     // CLICK SIN ÍTEM EN MANO
     // ═════════════════════════════════════════════════
 
-    /// <summary>
-    /// Hace OverlapPoint en la posición del cursor y busca el objeto
-    /// interactivo más apropiado entre TODOS los colliders superpuestos.
-    /// Resuelve el problema de colliders apilados (Oven + WaffleDisplay).
-    /// </summary>
     private void HandleWorldClick()
     {
-        // Si Plate.OnMouseDown() o ItemSource.OnMouseDown() ya procesaron este click,
-        // no procesar de nuevo (evita doble SelectItem o doble spawn)
         if (_clickHandledByOnMouseDown) return;
 
         Camera cam = Camera.main;
         if (cam == null)
         {
-            Debug.LogWarning("[DragManager] Camera.main es null — asegúrate de que la cámara tiene el tag 'MainCamera'.");
+            Debug.LogWarning("[DragManager] Camera.main es null.");
             return;
         }
 
@@ -115,7 +99,7 @@ public class DragManager : MonoBehaviour
 
         Debug.Log($"[DragManager] HandleWorldClick en {worldPos} | hits: {count}");
 
-        // ── Prioridad 1: DraggableItem listo para arrastrar ──────
+        // ── Prioridad 1: DraggableItem arrastrable ───────────────
         for (int i = 0; i < count; i++)
         {
             if (hits[i] == null) continue;
@@ -123,13 +107,14 @@ public class DragManager : MonoBehaviour
                                   ?? hits[i].GetComponentInParent<DraggableItem>();
             if (draggable != null && draggable.isDraggable && !draggable.IsBeingCarried)
             {
-                Debug.Log($"[DragManager]   → DraggableItem encontrado: {draggable.gameObject.name}");
+                Debug.Log($"[DragManager]   → DraggableItem: {draggable.gameObject.name}");
                 SelectItem(draggable);
                 return;
             }
         }
 
-        // ── Prioridad 2: ItemSource (helados, mezcla, miel) ──────
+        // ── Prioridad 2: ItemSource ──────────────────────────────
+        // ItemSource.OnMouseDown() lo maneja directamente — no duplicar aquí.
         for (int i = 0; i < count; i++)
         {
             if (hits[i] == null) continue;
@@ -137,10 +122,7 @@ public class DragManager : MonoBehaviour
                              ?? hits[i].GetComponentInParent<ItemSource>();
             if (source != null)
             {
-                Debug.Log($"[DragManager]   → ItemSource encontrado: {source.gameObject.name}");
-                // ItemSource.OnMouseDown() maneja su propia lógica de spawn+carry.
-                // No duplicamos aquí; si ItemSource tiene Collider, OnMouseDown sí funciona
-                // porque no hay otro collider apilado bloqueándolo.
+                Debug.Log($"[DragManager]   → ItemSource: {source.gameObject.name} (delegado a OnMouseDown)");
                 return;
             }
         }
@@ -153,13 +135,13 @@ public class DragManager : MonoBehaviour
                      ?? hits[i].GetComponentInParent<Oven>();
             if (oven != null)
             {
-                Debug.Log($"[DragManager]   → Oven encontrado: {oven.gameObject.name} | Estado: {oven.State}");
+                Debug.Log($"[DragManager]   → Oven: {oven.gameObject.name} | Estado: {oven.State}");
                 oven.RequestExtract();
                 return;
             }
         }
 
-        Debug.Log("[DragManager]   → Sin objeto interactivo en ese punto.");
+        Debug.Log("[DragManager]   → Sin objeto interactivo.");
     }
 
     // ═════════════════════════════════════════════════
@@ -177,7 +159,6 @@ public class DragManager : MonoBehaviour
         _hasSelectedItem = true;
 
         item.StartCarrying();
-
         SetCursor(cursorHolding);
         OnItemPickedUpEvent?.Invoke(item);
 
@@ -186,6 +167,7 @@ public class DragManager : MonoBehaviour
 
     /// <summary>
     /// Libera el ítem actual (drop exitoso o cancelación).
+    /// Llamar siempre ANTES de Destroy() en el objeto.
     /// </summary>
     public void OnItemReleased(DraggableItem item)
     {
@@ -197,7 +179,7 @@ public class DragManager : MonoBehaviour
         SetCursor(cursorDefault);
         OnItemDroppedEvent?.Invoke(item);
 
-        Debug.Log($"[DragManager] OnItemReleased → {item?.name}");
+        Debug.Log($"[DragManager] OnItemReleased → {item?.name ?? "null"}");
     }
 
     /// <summary>
@@ -230,7 +212,7 @@ public class DragManager : MonoBehaviour
         if (receiver != null && receiver.CanReceive(_selectedItem))
         {
             receiver.ReceiveItem(_selectedItem);
-            OnSuccessfulPlacementEvent?.Invoke(_selectedItem, receiver);
+            NotifySuccessfulPlacement(_selectedItem, receiver);
             OnItemReleased(_selectedItem);
         }
         else
@@ -238,6 +220,21 @@ public class DragManager : MonoBehaviour
             FeedbackManager.Instance?.ShowInvalidAction(target.transform.position);
             AudioManager.Instance?.PlaySound(SoundType.InvalidAction);
         }
+    }
+
+    /// <summary>
+    /// Notifica a listeners que un placement fue exitoso.
+    /// Si el receiver es DeliveryPlatform, marca el release como manejado
+    /// por el receiver (evita doble OnItemReleased).
+    /// </summary>
+    public void NotifySuccessfulPlacement(DraggableItem item, IItemReceiver receiver)
+    {
+        // DeliveryPlatform llama OnItemReleased internamente (debe hacerlo
+        // antes de Destroy). Marcar para que DraggableItem no lo llame también.
+        if (receiver is DeliveryPlatform && item != null)
+            item.MarkReleaseHandledByReceiver();
+
+        OnSuccessfulPlacementEvent?.Invoke(item, receiver);
     }
 
     public void CancelSelection()
@@ -249,11 +246,6 @@ public class DragManager : MonoBehaviour
         _hasSelectedItem = false;
         SetCursor(cursorDefault);
         DestroyGhost();
-    }
-
-    public void NotifySuccessfulPlacement(DraggableItem item, IItemReceiver receiver)
-    {
-        OnSuccessfulPlacementEvent?.Invoke(item, receiver);
     }
 
     // ─────────────────────────────────────────────────
