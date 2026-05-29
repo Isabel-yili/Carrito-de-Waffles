@@ -24,11 +24,21 @@ public class GameManager : MonoBehaviour
     public GameObject gameOverPanel;
     public GameObject timeUpPanel;
 
+    [Header("UI — Pause Menu")]
+    public GameObject pausePanel;
+
+    [Tooltip("Slider de volumen de música")]
+    public UnityEngine.UI.Slider musicSlider;
+
+    [Tooltip("Slider de volumen de SFX")]
+    public UnityEngine.UI.Slider sfxSlider;
+
     // ─── Estado de partida ────────────────────────────────────────
     private int   _money     = 0;
     private int   _errors    = 0;
     private float _timeLeft;
     private bool  _isRunning = false;
+    private bool _isPaused = false;
 
     public bool  IsGameRunning => _isRunning;
     public int   CurrentMoney  => _money;
@@ -44,10 +54,16 @@ public class GameManager : MonoBehaviour
     void Start()
     {
         StartGame();
+        SetupPauseMenu();
     }
 
     void Update()
     {
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            TogglePauseMenu();
+        }
+
         if (!_isRunning) return;
 
         _timeLeft -= Time.deltaTime;
@@ -94,6 +110,11 @@ public class GameManager : MonoBehaviour
             // Mostrar estadísticas finales
             ShowFinalStats(gameOverPanel);
         }
+
+        _isPaused = false;
+
+        if (pausePanel != null)
+            pausePanel.SetActive(false);
 
         AudioManager.Instance?.PlaySound(SoundType.GameOver);
         Debug.Log($"[GameManager] GAME OVER — Dinero final: ${_money}");
@@ -169,6 +190,25 @@ public class GameManager : MonoBehaviour
         SceneManager.LoadScene("MainMenu");
     }
 
+    private void SetupPauseMenu()
+    {
+        if (pausePanel != null)
+            pausePanel.SetActive(false);
+
+        // Inicializar sliders con volumen actual
+        if (musicSlider != null)
+        {
+            musicSlider.value = AudioManager.Instance.GetMusicVolume();
+            musicSlider.onValueChanged.AddListener(OnMusicVolumeChanged);
+        }
+
+        if (sfxSlider != null)
+        {
+            sfxSlider.value = AudioManager.Instance.GetSfxVolume();
+            sfxSlider.onValueChanged.AddListener(OnSfxVolumeChanged);
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────
     // UI UPDATES
     // ─────────────────────────────────────────────────────────────
@@ -213,4 +253,54 @@ public class GameManager : MonoBehaviour
             if (t.name == "ErrorsText")  t.text = $"Errores: {_errors}/{maxErrors}";
         }
     }
+
+    public void OpenPauseMenu()
+    {
+        // Evitar abrir pausa si el juego terminó
+        if (!_isRunning || _isPaused)
+            return;
+
+        _isPaused = true;
+
+        Time.timeScale = 0f;
+
+        if (pausePanel != null)
+            pausePanel.SetActive(true);
+
+        AudioManager.Instance?.PlaySound(SoundType.ButtonClick);
+    }
+
+    public void ClosePauseMenu()
+    {
+        if (!_isPaused)
+            return;
+
+        _isPaused = false;
+
+        Time.timeScale = 1f;
+
+        if (pausePanel != null)
+            pausePanel.SetActive(false);
+
+        AudioManager.Instance?.PlaySound(SoundType.ButtonClick);
+    }
+
+    public void TogglePauseMenu()
+    {
+        if (_isPaused)
+            ClosePauseMenu();
+        else
+            OpenPauseMenu();
+    }
+
+    public void OnMusicVolumeChanged(float value)
+    {
+        AudioManager.Instance?.SetMusicVolume(value);
+    }
+
+    public void OnSfxVolumeChanged(float value)
+    {
+        AudioManager.Instance?.SetSfxVolume(value);
+    }
+
 }

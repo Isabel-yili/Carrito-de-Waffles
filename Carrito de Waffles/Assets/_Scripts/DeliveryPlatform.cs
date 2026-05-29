@@ -2,27 +2,15 @@ using UnityEngine;
 using System.Collections;
 
 /// <summary>
-/// PLATAFORMA DE ENTREGA v3 — GDD sección 4.5
+/// PLATAFORMA DE ENTREGA v5 — Bug fix de entrega siempre incorrecta.
 ///
-/// FIX CRÍTICO v3:
-///   El flujo de entrega exitosa ahora sigue el orden correcto obligatorio:
-///
-///     1. Evaluar pedido (OrderManager)
-///     2. Marcar el plate como consumido (bloquear más drops sobre él)
-///     3. Limpiar DragManager (OnItemReleased) — ANTES de destruir el objeto
-///     4. Calcular recompensa y aplicarla
-///     5. Feedback visual/sonoro
-///     6. Plate.ConsumeAndSpawnNew() → Destroy(oldPlate) + Instantiate(newPlate)
-///
-///   El paso 3 es el que estaba ausente en v2, causando que el DragManager
-///   quedara bloqueado con _hasSelectedItem = true tras la entrega.
-///
-///   ENTREGA INCORRECTA:
-///   - GameManager.AddError()
-///   - El Plate vuelve a la mesa automáticamente porque:
-///       DraggableItem.HandleFailedDrop() → persistentDrag=true → queda donde se suelta
-///       o MoveToOriginCoroutine() si tiene _originOven == null.
-///   - NO destruimos ni movemos el plate aquí — DraggableItem ya lo maneja.
+/// FIXES:
+///   - OnIncorrectDelivery ya NO llama DragManager.OnItemReleased() directamente;
+///     lo hace a través de item.ReturnToOrigin() + el flujo normal de DraggableItem,
+///     evitando el doble-release que corrompía el estado del DragManager.
+///   - MarkReleaseHandledByReceiver() se llama en AMBOS casos (correcto e incorrecto)
+///     para que DraggableItem.TryDeliverToTarget() no haga un segundo OnItemReleased.
+///   - Log extendido para diagnóstico de mismatches de RecipeType.
 /// </summary>
 public class DeliveryPlatform : MonoBehaviour, IItemReceiver
 {
@@ -42,6 +30,8 @@ public class DeliveryPlatform : MonoBehaviour, IItemReceiver
     public OrderManager orderManager;
     public GameManager gameManager;
 
+    private bool _isProcessingDelivery = false;
+
     // ─────────────────────────────────────────────────────────────
     // IItemReceiver
     // ─────────────────────────────────────────────────────────────
@@ -49,68 +39,92 @@ public class DeliveryPlatform : MonoBehaviour, IItemReceiver
     public bool CanReceive(DraggableItem item)
     {
         Plate plate = item.GetComponent<Plate>();
-        return plate != null && plate.HasRecipe;
+        if (plate == null) return false;
+
+        // HasRecipe verifica que Resolve() != null internamente
+        bool canReceive = plate.HasRecipe;
+        Debug.Log($"[DeliveryPlatform] CanReceive → plate={plate.name} | " +
+                  $"HasRecipe={canReceive} | recipe={plate.CompletedRecipe}");
+        return canReceive;
     }
 
     public void ReceiveItem(DraggableItem item)
     {
-        Plate plate = item.GetComponent<Plate>();
-        if (plate == null || !plate.HasRecipe) return;
+        if (_isProcessingDelivery) return;
+        _isProcessingDelivery = true;
 
-        RecipeType deliveredRecipe = plate.CompletedRecipe.Value;
+        // FIX: marcar siempre como handled para que DraggableItem.TryDeliverToTarget()
+        // no llame OnItemReleased() por segunda vez. Nosotros lo manejamos abajo.
+        DragManager.Instance?.NotifySuccessfulPlacement(item, this);
+
+        Plate plate = item.GetComponent<Plate>();
+        if (plate == null || !plate.HasRecipe)
+        {
+            Debug.LogWarning("[DeliveryPlatform] ReceiveItem: plato inválido o sin receta.");
+            DragManager.Instance?.OnItemReleased(item);
+            _isProcessingDelivery = false;
+            return;
+        }
+
+        RecipeType? resolvedRecipe = plate.CompletedRecipe;
+        if (!resolvedRecipe.HasValue)
+        {
+            Debug.LogWarning("[DeliveryPlatform] ReceiveItem: Resolve() devolvió null — " +
+                             "combinación de ingredientes no forma una receta válida.");
+            OnIncorrectDelivery(item);
+            _isProcessingDelivery = false;
+            return;
+        }
+
+        RecipeType deliveredRecipe = resolvedRecipe.Value;
         WaffleCookState cookState = plate.Recipe.cookState;
+
+        Debug.Log($"[DeliveryPlatform] Entregando receta: {deliveredRecipe} | cookState: {cookState}");
 
         bool success = orderManager != null && orderManager.TryFulfillOrder(deliveredRecipe);
 
         if (success)
-        {
             OnCorrectDelivery(item, plate, deliveredRecipe, cookState);
-        }
         else
-        {
             OnIncorrectDelivery(item);
-        }
+
+        _isProcessingDelivery = false;
     }
 
     // ─────────────────────────────────────────────────────────────
-    // ENTREGA CORRECTA — orden de operaciones es crítico
+    // ENTREGA CORRECTA
     // ─────────────────────────────────────────────────────────────
 
-    private void OnCorrectDelivery(DraggableItem item, Plate plate,
-                                   RecipeType recipe, WaffleCookState cookState)
+    private void OnCorrectDelivery(
+        DraggableItem item,
+        Plate plate,
+        RecipeType recipe,
+        WaffleCookState cookState)
     {
-        // ── 1. Calcular recompensa ────────────────────────────────
         int baseReward = RecipeRewards.GetReward(recipe);
+
         float multiplier = cookState switch
         {
             WaffleCookState.Overcooked => overcookedMultiplier,
             WaffleCookState.Burned => burnedMultiplier,
             _ => perfectMultiplier
         };
+
         int finalReward = Mathf.RoundToInt(baseReward * multiplier);
 
-        // ── 2. Limpiar DragManager ANTES de destruir el objeto ────
-        // Si no hacemos esto, DragManager._hasSelectedItem queda true
-        // para siempre y el juego se traba.
-        // OnItemReleased llama item.StopCarrying() internamente.
-        DragManager.Instance?.OnItemReleased(item);
-
-        // ── 3. Aplicar dinero ─────────────────────────────────────
         gameManager?.AddMoney(finalReward);
 
-        // ── 4. Feedback ───────────────────────────────────────────
         FeedbackManager.Instance?.ShowSuccessDelivery(transform.position, finalReward);
+
         AudioManager.Instance?.PlaySound(SoundType.DeliverySuccess);
+
         StartCoroutine(FlashColor(colorSuccess));
 
-        string qualityLog = cookState == WaffleCookState.Perfect
-            ? "perfectamente"
-            : $"calidad baja ({cookState})";
-        Debug.Log($"[DeliveryPlatform] ✅ Entregado {qualityLog} — ${finalReward}");
+        Debug.Log($"[DeliveryPlatform] ✅ Entrega correcta: {recipe} | ${finalReward}");
 
-        // ── 5. Consumir plate e instanciar uno nuevo ──────────────
-        // ConsumeAndSpawnNew() llama Destroy(gameObject) internamente.
-        // DEBE ser lo último porque destruye el objeto al que apunta "item".
+        // ← FIX REAL
+        DragManager.Instance?.OnItemReleased(item);
+
         plate.ConsumeAndSpawnNew();
     }
 
@@ -121,21 +135,20 @@ public class DeliveryPlatform : MonoBehaviour, IItemReceiver
     private void OnIncorrectDelivery(DraggableItem item)
     {
         gameManager?.AddError();
-
         FeedbackManager.Instance?.ShowErrorDelivery(transform.position);
         AudioManager.Instance?.PlaySound(SoundType.DeliveryError);
         StartCoroutine(FlashColor(colorError));
 
-        // NO llamamos OnItemReleased aquí.
-        // DraggableItem.TryDeliverToTarget() ya llamó OnItemReleased()
-        // después de que ReceiveItem() devolvió el control.
-        // El plate vuelve a la mesa por HandleFailedDrop().
+        Debug.Log("[DeliveryPlatform] ❌ Entrega incorrecta.");
 
-        Debug.Log("[DeliveryPlatform] ❌ Pedido incorrecto — el plate regresa a la mesa.");
+        // FIX: ReturnToOrigin llama StopCarrying() internamente.
+        // Luego liberamos el DragManager. NO llamar OnItemReleased dos veces.
+        item.ReturnToOrigin();
+        DragManager.Instance?.OnItemReleased(item);
     }
 
     // ─────────────────────────────────────────────────────────────
-    // HIGHLIGHT — feedback visual al arrastrar el plate encima
+    // HIGHLIGHT
     // ─────────────────────────────────────────────────────────────
 
     void OnTriggerEnter2D(Collider2D other)
@@ -172,15 +185,45 @@ public class DeliveryPlatform : MonoBehaviour, IItemReceiver
 // RECOMPENSAS — GDD sección 8.3
 // ─────────────────────────────────────────────────────────────────
 
-/// <summary>Recompensas base por receta.</summary>
 public static class RecipeRewards
 {
     public static int GetReward(RecipeType recipe) => recipe switch
     {
+        RecipeType.Perfect => 10,
+        RecipeType.Perfect_Vanilla => 13,
+        RecipeType.Perfect_Strawberry => 13,
+        RecipeType.Perfect_Chocolate => 13,
+        RecipeType.Perfect_Honey => 12,
+        RecipeType.Perfect_VanillaStrawberry => 16,
+        RecipeType.Perfect_VanillaChocolate => 16,
+        RecipeType.Perfect_VanillaHoney => 15,
+        RecipeType.Perfect_StrawberryChocolate => 16,
+        RecipeType.Perfect_StrawberryHoney => 15,
+        RecipeType.Perfect_ChocolateHoney => 15,
+        RecipeType.Perfect_VanillaStrawberryChocolate => 20,
+        RecipeType.Perfect_VanillaStrawberryHoney => 19,
+        RecipeType.Perfect_VanillaChocolateHoney => 19,
+        RecipeType.Perfect_StrawberryChocolateHoney => 19,
+        RecipeType.Perfect_VanillaStrawberryChocolateHoney => 25,
+        RecipeType.IceCream_Vanilla => 8,
+        RecipeType.IceCream_Strawberry => 8,
+        RecipeType.IceCream_Chocolate => 8,
+        RecipeType.IceCream_VanillaStrawberry => 11,
+        RecipeType.IceCream_VanillaChocolate => 11,
+        RecipeType.IceCream_VanillaHoney => 10,
+        RecipeType.IceCream_StrawberryChocolate => 11,
+        RecipeType.IceCream_StrawberryHoney => 10,
+        RecipeType.IceCream_ChocolateHoney => 10,
+        RecipeType.IceCream_VanillaStrawberryChocolate => 14,
+        RecipeType.IceCream_VanillaStrawberryHoney => 13,
+        RecipeType.IceCream_VanillaChocolateHoney => 13,
+        RecipeType.IceCream_StrawberryChocolateHoney => 13,
+        RecipeType.IceCream_VanillaStrawberryChocolateHoney => 18,
+        RecipeType.Honey => 7,
         RecipeType.WaffleSimple => 10,
         RecipeType.IceCreamAlone => 8,
         RecipeType.WaffleWithIceCream => 15,
         RecipeType.WaffleWithHoneyButter => 12,
-        _ => 0
+        _ => 5
     };
 }

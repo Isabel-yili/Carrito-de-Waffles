@@ -413,15 +413,30 @@ public class Oven : MonoBehaviour, IItemReceiver
 
         // ── 7. Añadir DraggableItem al raíz ──
         // Destruir residual de un ciclo anterior para evitar estado corrupto.
-        DraggableItem existing = waffleDisplay.GetComponent<DraggableItem>();
-        if (existing != null) Destroy(existing);
-        _extractedWaffle = waffleDisplay.AddComponent<DraggableItem>();
+        _extractedWaffle = waffleDisplay.GetComponent<DraggableItem>();
+
+        if (_extractedWaffle == null)
+        {
+            _extractedWaffle = waffleDisplay.AddComponent<DraggableItem>();
+        }
+        else
+        {
+            // MUY IMPORTANTE:
+            // limpiar estado residual del ciclo anterior
+            _extractedWaffle.ResetState();
+        }
+
+        // RESET COMPLETO DEL ESTADO
+        _extractedWaffle.enabled = true;
 
         _extractedWaffle.itemType = waffleType;
         _extractedWaffle.isDraggable = true;
-        _extractedWaffle.persistentDrag = true;   // Objeto de escena — Modo B
-        _extractedWaffle.destroyOnFailedDrop = false; // Vuelve al horno si falla
+        _extractedWaffle.persistentDrag = true;
+        _extractedWaffle.destroyOnFailedDrop = false;
         _extractedWaffle.carrySortingOrder = waffleCarrySortingOrder;
+
+        // MUY IMPORTANTE
+        _extractedWaffle.SetOriginOven(this);
 
         // ── 8. Posicionar en el cursor ──
         Camera cam = Camera.main;
@@ -459,6 +474,8 @@ public class Oven : MonoBehaviour, IItemReceiver
         waffleDisplay.transform.localScale = _waffleLocalScale;
         waffleDisplay.transform.localRotation = _waffleLocalRot;
 
+        waffleDisplay.SetActive(false);
+
         Debug.Log($"[Oven] ReturnWaffle — localScale restaurado: {_waffleLocalScale}");
 
         // Restaurar sprite
@@ -489,14 +506,13 @@ public class Oven : MonoBehaviour, IItemReceiver
         }
 
         _extractedWaffle = null;
-        StartCoroutine(RemoveDraggableNextFrame(waffle));
+        _extractedWaffle = null;
+
+        waffle.isDraggable = false;
+        waffle.persistentDrag = false;
+        waffle.destroyOnFailedDrop = false;
     }
 
-    private IEnumerator RemoveDraggableNextFrame(DraggableItem di)
-    {
-        yield return null;
-        if (di != null) Destroy(di);
-    }
 
     // ═══════════════════════════════════════════════════════════
     // MEJORAS

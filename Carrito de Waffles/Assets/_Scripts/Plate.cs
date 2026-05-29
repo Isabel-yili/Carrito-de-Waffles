@@ -20,14 +20,81 @@ public class PlateRecipe
 
     public bool HasAnyIceCream => vanilla || strawberry || chocolate;
 
+    /// <summary>
+    /// Resuelve el RecipeType exacto según el contenido del plato.
+    /// El resultado coincide 1:1 con ToSpriteKey() y con los valores
+    /// del enum RecipeType definidos en ItemType.cs.
+    ///
+    /// REGLAS:
+    ///   - Waffle quemado sin toppings → null (no es un pedido válido)
+    ///   - Plato vacío → null
+    ///   - Solo miel sin waffle → Honey
+    ///   - El cook state NO afecta al RecipeType: los clientes piden
+    ///     "Perfect_Vanilla" y el jugador puede servir ese pedido con
+    ///     cualquier estado del waffle (la calidad solo afecta la recompensa
+    ///     económica vía WaffleCookState en DeliveryPlatform).
+    /// </summary>
     public RecipeType? Resolve()
     {
+        // Plato vacío
         if (!hasWaffle && !HasAnyIceCream && !honey) return null;
-        if (hasWaffle && cookState == WaffleCookState.Burned && !HasAnyIceCream && !honey) return null;
-        if (!hasWaffle && (HasAnyIceCream || honey)) return RecipeType.IceCreamAlone;
-        if (hasWaffle && !HasAnyIceCream && !honey) return RecipeType.WaffleSimple;
-        if (hasWaffle && HasAnyIceCream) return RecipeType.WaffleWithIceCream;
-        if (hasWaffle && honey && !HasAnyIceCream) return RecipeType.WaffleWithHoneyButter;
+
+        // Waffle quemado sin nada más → no entregable
+        if (hasWaffle && cookState == WaffleCookState.Burned && !HasAnyIceCream && !honey)
+            return null;
+
+        // ── Sin waffle ────────────────────────────────────────────
+        if (!hasWaffle)
+        {
+            // Solo miel (sin waffle ni helado)
+            if (!HasAnyIceCream && honey) return RecipeType.Honey;
+
+            // Helado(s) solo(s)
+            if (vanilla && strawberry && chocolate && honey) return RecipeType.IceCream_VanillaStrawberryChocolateHoney;
+            if (vanilla && strawberry && chocolate) return RecipeType.IceCream_VanillaStrawberryChocolate;
+            if (vanilla && strawberry && honey) return RecipeType.IceCream_VanillaStrawberryHoney;
+            if (vanilla && chocolate && honey) return RecipeType.IceCream_VanillaChocolateHoney;
+            if (strawberry && chocolate && honey) return RecipeType.IceCream_StrawberryChocolateHoney;
+            if (vanilla && strawberry) return RecipeType.IceCream_VanillaStrawberry;
+            if (vanilla && chocolate) return RecipeType.IceCream_VanillaChocolate;
+            if (vanilla && honey) return RecipeType.IceCream_VanillaHoney;
+            if (strawberry && chocolate) return RecipeType.IceCream_StrawberryChocolate;
+            if (strawberry && honey) return RecipeType.IceCream_StrawberryHoney;
+            if (chocolate && honey) return RecipeType.IceCream_ChocolateHoney;
+            if (vanilla) return RecipeType.IceCream_Vanilla;
+            if (strawberry) return RecipeType.IceCream_Strawberry;
+            if (chocolate) return RecipeType.IceCream_Chocolate;
+
+            return null; // combinación no reconocida
+        }
+
+        // ── Con waffle ────────────────────────────────────────────
+        // Waffle solo (sin toppings)
+        if (!HasAnyIceCream && !honey) return RecipeType.Perfect;
+
+        // Waffle + 4 toppings
+        if (vanilla && strawberry && chocolate && honey) return RecipeType.Perfect_VanillaStrawberryChocolateHoney;
+
+        // Waffle + 3 toppings
+        if (vanilla && strawberry && chocolate) return RecipeType.Perfect_VanillaStrawberryChocolate;
+        if (vanilla && strawberry && honey) return RecipeType.Perfect_VanillaStrawberryHoney;
+        if (vanilla && chocolate && honey) return RecipeType.Perfect_VanillaChocolateHoney;
+        if (strawberry && chocolate && honey) return RecipeType.Perfect_StrawberryChocolateHoney;
+
+        // Waffle + 2 toppings
+        if (vanilla && strawberry) return RecipeType.Perfect_VanillaStrawberry;
+        if (vanilla && chocolate) return RecipeType.Perfect_VanillaChocolate;
+        if (vanilla && honey) return RecipeType.Perfect_VanillaHoney;
+        if (strawberry && chocolate) return RecipeType.Perfect_StrawberryChocolate;
+        if (strawberry && honey) return RecipeType.Perfect_StrawberryHoney;
+        if (chocolate && honey) return RecipeType.Perfect_ChocolateHoney;
+
+        // Waffle + 1 topping
+        if (vanilla) return RecipeType.Perfect_Vanilla;
+        if (strawberry) return RecipeType.Perfect_Strawberry;
+        if (chocolate) return RecipeType.Perfect_Chocolate;
+        if (honey) return RecipeType.Perfect_Honey;
+
         return null;
     }
 
@@ -86,6 +153,11 @@ public class PlateVisualEntry
 ///   no intente procesar más clicks sobre este objeto en el frame
 ///   que queda vivo tras llamar Destroy().
 ///
+/// CAMBIO v5.1 (junto a RecipeType v2):
+///   PlateRecipe.Resolve() devuelve ahora el RecipeType granular exacto
+///   (e.g. Perfect_VanillaChocolate) en lugar de las 4 categorías antiguas.
+///   Esto permite que OrderManager haga match perfecto con el pedido del cliente.
+///
 ///   Flujo completo de entrega correcta:
 ///     DeliveryPlatform.OnCorrectDelivery()
 ///       → DragManager.OnItemReleased(item)    [limpia _hasSelectedItem]
@@ -118,11 +190,6 @@ public class Plate : MonoBehaviour, IItemReceiver
     [Tooltip("Sprite de fallback cuando la clave no está en la lista")]
     public Sprite spriteFallback;
 
-    [Header("Spawn del próximo plato")]
-    [Tooltip("Prefab de este mismo Plate")]
-    public GameObject platePrefab;
-    [Tooltip("Transform de la mesa donde aparece el nuevo plato tras entrega correcta")]
-    public Transform plateSpawnPoint;
 
     // ─── Estado ────────────────────────────────────────────────────
 
@@ -142,15 +209,20 @@ public class Plate : MonoBehaviour, IItemReceiver
 
     void Awake()
     {
+        if (plateVisualRenderer == null)
+            plateVisualRenderer =
+                GetComponentInChildren<SpriteRenderer>();
+
         _myDraggable = GetComponent<DraggableItem>();
 
-        // Modo B — Persistent Drag
         _myDraggable.isDraggable = true;
-        _myDraggable.persistentDrag = true;
+        _myDraggable.holdToDrag = true;
+        _myDraggable.persistentDrag = false;
         _myDraggable.destroyOnFailedDrop = false;
 
         UpdateVisual();
     }
+
 
     // ═══════════════════════════════════════════════════════════════
     // INPUT
@@ -158,16 +230,16 @@ public class Plate : MonoBehaviour, IItemReceiver
 
     void OnMouseDown()
     {
-        if (_isConsumed) return;  // plate ya entregado, ignorar clicks
+        if (_isConsumed) return;
 
         DragManager.Instance?.MarkClickHandled();
 
-        // Si el jugador lleva algo, TryDeliverToTarget() del DraggableItem activo lo maneja
+        // En MODO B (holdToDrag), el DragManager no interviene en el pickup;
+        // el Plate llama directamente a OnItemPickedUp para iniciar el drag.
         if (DragManager.Instance != null && DragManager.Instance.HasSelectedItem)
             return;
 
-        // Sin item en mano → tomar el plate
-        DragManager.Instance?.SelectItem(_myDraggable);
+        DragManager.Instance?.OnItemPickedUp(_myDraggable);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -186,19 +258,21 @@ public class Plate : MonoBehaviour, IItemReceiver
                 return !_recipe.hasWaffle;
 
             case ItemType.IceCreamVanilla:
+                // Acepta si hay waffle, o si el plato está en modo "solo helado" (sin waffle ni miel).
+                // Permite agregar múltiples sabores de helado combinados.
                 return !_recipe.vanilla
-                    && (_recipe.hasWaffle || (!_recipe.HasAnyIceCream && !_recipe.honey));
+                    && (_recipe.hasWaffle || !_recipe.honey);
 
             case ItemType.IceCreamStrawberry:
                 return !_recipe.strawberry
-                    && (_recipe.hasWaffle || (!_recipe.HasAnyIceCream && !_recipe.honey));
+                    && (_recipe.hasWaffle || !_recipe.honey);
 
             case ItemType.IceCreamChocolate:
                 return !_recipe.chocolate
-                    && (_recipe.hasWaffle || (!_recipe.HasAnyIceCream && !_recipe.honey));
+                    && (_recipe.hasWaffle || !_recipe.honey);
 
             case ItemType.HoneyButter:
-                return !_recipe.honey && _recipe.hasWaffle;
+                return !_recipe.honey;
 
             default: return false;
         }
@@ -217,14 +291,12 @@ public class Plate : MonoBehaviour, IItemReceiver
 
         if (isWaffle)
         {
-            // WaffleDisplay pertenece al Oven — solo ocultarlo
             item.StopCarrying();
             item.gameObject.SetActive(false);
             StartCoroutine(DestroyComponentNextFrame(item));
         }
         else
         {
-            // Ingrediente temporal instanciado → destruir objeto completo
             Destroy(item.gameObject);
         }
 
@@ -301,30 +373,16 @@ public class Plate : MonoBehaviour, IItemReceiver
     // CONSUME — llamado SOLO por DeliveryPlatform.OnCorrectDelivery()
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// Marca el plate como consumido, instancia uno nuevo en la mesa, y se destruye.
-    /// PRECONDICIÓN: DragManager.OnItemReleased() ya fue llamado antes de este método.
-    /// </summary>
     public void ConsumeAndSpawnNew()
     {
-        // Marcar consumido para que ninguna interacción en el frame de destrucción
-        // intente procesar este objeto
         _isConsumed = true;
 
-        // Asegurarse de que el DraggableItem no sigue arrastrando
         if (_myDraggable != null)
+        {
             _myDraggable.StopCarrying();
+        }
 
-        // Instanciar el nuevo plate
-        if (platePrefab != null && plateSpawnPoint != null)
-        {
-            Instantiate(platePrefab, plateSpawnPoint.position, Quaternion.identity);
-            Debug.Log("[Plate] Nuevo plato spawneado en mesa.");
-        }
-        else
-        {
-            Debug.LogWarning("[Plate] platePrefab o plateSpawnPoint no asignados — no se spawneó nuevo plato.");
-        }
+        PlateSpawner.Instance?.SpawnPlate();
 
         Destroy(gameObject);
     }

@@ -211,22 +211,45 @@ public class WaffleMixAnimatorSync : MonoBehaviour
 
     private void OnItemDropped(DraggableItem item)
     {
-        if (!_isCarrying || item != _trackedItem) return;
+        if (item == null) return;
+        if (!_isCarrying) return;
+
+        if (_trackedItem == null)
+            return;
 
         _isCarrying = false;
         _trackedItem = null;
+
         SetAnimatorBool(PARAM_IS_CARRYING, false);
         SetAnimatorTrigger(PARAM_DO_CANCEL);
+
         ShowStaticRenderers();
+    }
+
+    void Update()
+    {
+        if (_trackedItem == null && _isCarrying)
+        {
+            _isCarrying = false;
+
+            if (waffleMixAnimator != null)
+                waffleMixAnimator.SetBool(PARAM_IS_CARRYING, false);
+
+            ShowStaticRenderers();
+        }
     }
 
     private void OnSuccessfulPlacement(DraggableItem item, IItemReceiver receiver)
     {
-        if (!_isCarrying || item != _trackedItem) return;
+        if (!_isCarrying) return;
+
+        if (_trackedItem == null)
+            return;
 
         _isCarrying = false;
-        _trackedItem = null;
         SetAnimatorBool(PARAM_IS_CARRYING, false);
+
+        _trackedItem = null;
 
         if (receiver is Oven)
             SetAnimatorTrigger(PARAM_DO_DELIVERED);
@@ -252,5 +275,16 @@ public class WaffleMixAnimatorSync : MonoBehaviour
     {
         if (waffleMixAnimator != null)
             waffleMixAnimator.SetBool(p, v);
+    }
+
+    public void NotifyDeliveredToOven()
+    {
+        _isCarrying = false;
+        _trackedItem = null;
+
+        SetAnimatorBool(PARAM_IS_CARRYING, false);
+        SetAnimatorTrigger(PARAM_DO_DELIVERED);
+
+        ShowStaticRenderers();
     }
 }

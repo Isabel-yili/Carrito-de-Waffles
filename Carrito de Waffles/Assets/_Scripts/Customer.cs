@@ -16,81 +16,88 @@ public enum CustomerMood
 }
 
 /// <summary>
-/// CLIENTE — sistema completo de comportamiento visual.
+/// CLIENTE — comportamiento de llegada y salida por animación vertical.
 ///
-/// Cada cliente:
-///   - Llega con un mood inicial (Ecstatic o Happy — nunca enojado al llegar)
-///   - Tiene un timer de paciencia que baja con el tiempo
-///   - El mood se degrada conforme baja la paciencia
-///   - Muestra un globo de texto con el sprite del pedido
-///   - Al hacer hover, muestra un panel translúcido con slider + carita
-///   - Al recibir pedido correcto → globo verde + animación de salida
-///   - Al recibir pedido incorrecto → globo rojo + el cliente se va
-///   - Los clientes llegan desde izquierda o derecha de pantalla
+/// FLUJO DE ANIMATOR (ver imagen del controller):
+///   Entry → Idle
+///   Idle  → WalkViejita  (trigger "WalkIn")   ← cliente entra desde abajo
+///   WalkViejita → Idle   (al terminar la anim de entrada)
+///   Idle  → Happy        (trigger "Happy")     ← pedido correcto
+///   Idle  → Angry        (trigger "Angry")     ← se va sin ser atendido
+///   Happy / Angry → WalkBye                    ← sale hacia abajo (reversa)
+///   WalkBye → Idle  (el objeto se destruye antes de que esta transición ocurra)
+///
+/// Los clientes ya NO se mueven lateralmente. La ilusión de movimiento
+/// es 100% responsabilidad de las animaciones Procreate (WalkViejita / WalkBye).
+/// El script coloca el GameObject directamente en targetPosition al inicializar.
+///
+/// PARÁMETROS DEL ANIMATOR:
+///   Trigger  WalkIn   → inicia WalkViejita
+///   Trigger  Happy    → inicia Happy → WalkBye
+///   Trigger  Angry    → inicia Angry → WalkBye
 ///
 /// JERARQUÍA DEL PREFAB:
 ///   Customer  (este script + Collider2D para hover)
-///   ├── Body              SpriteRenderer — sprite del cliente (Procreate)
-///   ├── OrderBubble       SpriteRenderer — globo de texto
-///   │   └── OrderIcon     SpriteRenderer — sprite del pedido solicitado
-///   └── MoodPanel         (Canvas World Space — aparece en hover)
-///       ├── Background    Image (translúcido, color = #00000088)
-///       ├── MoodSlider    Slider — 0 a 100, barra de estado de ánimo
-///       │   └── Fill      Image — color cambia con el mood
-///       └── MoodFaceText  TMP — la carita ":D" ":)" ":/" ":(" ">:("
-///
-/// COLORES DEL GLOBO según estado:
-///   Verde puro    → pedido correcto entregado
-///   Rojo puro     → error (pedido entregado no coincide con nadie)
-///   Normal/blanco → esperando
+///   ├── Body              SpriteRenderer
+///   ├── OrderBubble       SpriteRenderer — globo
+///   │   └── OrderIcon     SpriteRenderer — sprite del pedido
+///   └── MoodPanel         (Canvas World Space — hover)
+///       ├── Background    Image
+///       ├── MoodSlider    Slider
+///       │   └── Fill      Image
+///       └── MoodFaceText  TMP
 /// </summary>
 public class Customer : MonoBehaviour
 {
     // ─── Inspector ────────────────────────────────────────────────
+
     [Header("══ Configuración de llegada ══")]
-    [Tooltip("Mood con el que llega el cliente (Ecstatic o Happy — aleatorio)")]
-    public CustomerMood initialMood = CustomerMood.Happy;
     [Tooltip("Paciencia base en segundos — se sobreescribe desde OrderManager")]
     public float basePatience = 30f;
     [Tooltip("Multiplicador de paciencia según mood inicial")]
     public AnimationCurve patienceByMood = AnimationCurve.Linear(0, 0.6f, 4, 1.4f);
 
+    [Header("══ Duraciones de animación ══")]
+    [Tooltip("Duración de WalkViejita (entrada). Debe coincidir con la duración del clip en el Animator.")]
+    public float walkInDuration = 0.8f;
+    [Tooltip("Duración de Happy o Angry antes de pasar a WalkBye.")]
+    public float reactionDuration = 0.6f;
+    [Tooltip("Duración de WalkBye (salida). Debe coincidir con la duración del clip en el Animator.")]
+    public float walkByeDuration = 0.8f;
+
     [Header("══ Visuals ══")]
     public SpriteRenderer bodyRenderer;
-    public SpriteRenderer orderBubbleRenderer;   // El globo
-    public SpriteRenderer orderIconRenderer;      // Sprite del pedido dentro del globo
-    public Animator customerAnimator;       // Animaciones Procreate del cliente
+    public SpriteRenderer orderBubbleRenderer;
+    public SpriteRenderer orderIconRenderer;
+    public Animator customerAnimator;
+
+    [Header("══ Orientación según slot ══")]
+    [Tooltip("Si está activado, el sprite se voltea horizontalmente cuando el cliente está en el slot DERECHO.\n" +
+             "Desactívalo si tu animación ya maneja la orientación correctamente.")]
+    public bool flipWhenRight = true;
 
     [Header("══ Sprites del globo ══")]
-    public Sprite bubbleNormal;   // Globo blanco/neutro
-    public Sprite bubbleGreen;    // Globo verde — pedido correcto
-    public Sprite bubbleRed;      // Globo rojo — error o todos los globos
-    public Sprite bubbleFlash;    // Frame de flash al recibir
+    public Sprite bubbleNormal;
+    public Sprite bubbleGreen;
+    public Sprite bubbleRed;
+    public Sprite bubbleFlash;
 
     [Header("══ Panel de hover (mood) ══")]
-    public GameObject moodPanel;             // Se activa al hacer hover
-    public Slider moodSlider;            // 0–1, representa paciencia restante
-    public Image moodSliderFill;        // Cambia de color con el mood
-    public TextMeshProUGUI moodFaceText;     // ":D" ":)" ":/" ":(" ">:("
-    public Image moodPanelBackground;   // Fondo translúcido
+    public GameObject moodPanel;
+    public Slider moodSlider;
+    public Image moodSliderFill;
+    public TextMeshProUGUI moodFaceText;
+    public Image moodPanelBackground;
 
     [Header("══ Colores del slider de mood ══")]
-    public Color colorEcstatic = new Color(0.3f, 0.9f, 0.3f);   // Verde brillante
-    public Color colorHappy = new Color(0.6f, 0.9f, 0.3f);   // Verde amarillento
-    public Color colorNeutral = new Color(1.0f, 0.85f, 0.2f);  // Amarillo
-    public Color colorAnnoyed = new Color(1.0f, 0.5f, 0.1f);  // Naranja
-    public Color colorFurious = new Color(0.9f, 0.15f, 0.1f);  // Rojo
-
-    [Header("══ Entrada desde los lados ══")]
-    [Tooltip("Posición final del cliente en la escena")]
-    public Vector3 targetPosition;
-    [Tooltip("TRUE = entra desde la izquierda, FALSE = desde la derecha")]
-    public bool enterFromLeft = true;
-    [Tooltip("Distancia fuera de pantalla desde donde aparece")]
-    public float entryOffscreen = 8f;
-    public float moveSpeed = 4f;
+    public Color colorEcstatic = new Color(0.3f, 0.9f, 0.3f);
+    public Color colorHappy = new Color(0.6f, 0.9f, 0.3f);
+    public Color colorNeutral = new Color(1.0f, 0.85f, 0.2f);
+    public Color colorAnnoyed = new Color(1.0f, 0.5f, 0.1f);
+    public Color colorFurious = new Color(0.9f, 0.15f, 0.1f);
 
     // ─── Estado interno ───────────────────────────────────────────
+
     private RecipeType _order;
     private float _maxPatience;
     private float _patience;
@@ -99,8 +106,28 @@ public class Customer : MonoBehaviour
     private bool _isLeaving = false;
     private bool _isHovering = false;
 
-    // Referencia al OrderManager para notificar cuando se va
+    // El timer de paciencia solo corre una vez que el cliente está en el mostrador
+    private bool _hasArrived = false;
+
     private OrderManager _orderManager;
+
+    // Posición en escena asignada por OrderManager
+    [HideInInspector] public Vector3 targetPosition;
+
+    // ─────────────────────────────────────────────────────────────
+    // AWAKE — protección contra Root Motion
+    // ─────────────────────────────────────────────────────────────
+
+    void Awake()
+    {
+        // Desactivar Apply Root Motion para que la animación NO mueva
+        // el Transform del cliente fuera de su posición asignada.
+        if (customerAnimator != null && customerAnimator.applyRootMotion)
+        {
+            customerAnimator.applyRootMotion = false;
+            Debug.Log($"[Customer] Apply Root Motion desactivado en '{gameObject.name}'.");
+        }
+    }
 
     public RecipeType Order => _order;
     public float PatienceRatio => _patience / _maxPatience;
@@ -110,61 +137,77 @@ public class Customer : MonoBehaviour
     // INICIALIZACIÓN — llamado desde OrderManager al instanciar
     // ─────────────────────────────────────────────────────────────
 
-    public void Initialize(RecipeType order, float patience, bool fromLeft, Vector3 target, OrderManager manager)
+    /// <summary>
+    /// Coloca al cliente en su posición de mostrador y arranca la entrada.
+    /// Ya no recibe fromLeft porque el movimiento es puramente por animación.
+    /// </summary>
+    /// <param name="isLeftSlot">True si el cliente ocupa el slot IZQUIERDO, false si es el DERECHO.</param>
+    public void Initialize(RecipeType order, float patience, Vector3 target, OrderManager manager, bool isLeftSlot = true)
     {
         _order = order;
-        _maxPatience = patience;
-        _patience = patience;
         _orderManager = manager;
         targetPosition = target;
-        enterFromLeft = fromLeft;
 
-        // Mood inicial: aleatorio entre Ecstatic y Happy
-        initialMood = (CustomerMood)Random.Range(3, 5);
+        // Mood inicial: aleatorio entre Happy y Ecstatic
+        CustomerMood initialMood = (CustomerMood)Random.Range(3, 5);
         _currentMood = initialMood;
 
-        // Ajustar paciencia según mood
+        // Paciencia ajustada por mood
         float moodMultiplier = patienceByMood.Evaluate((float)initialMood);
-        _patience = _maxPatience * moodMultiplier;
-        _maxPatience = _patience;
+        _maxPatience = patience * moodMultiplier;
+        _patience = _maxPatience;
 
-        // Configurar visual del pedido en el globo
+        // Colocar en la posición del slot (la animación hace la "llegada" visual)
+        transform.position = target;
+
+        // Orientar el sprite según el lado del slot (recibido directamente desde OrderManager)
+        if (flipWhenRight && bodyRenderer != null)
+        {
+            bool isRightSlot = !isLeftSlot;
+            bodyRenderer.flipX = isRightSlot;
+            // También voltear el globo de pedido para que quede del lado correcto
+            if (orderBubbleRenderer != null)
+                orderBubbleRenderer.flipX = isRightSlot;
+            Debug.Log($"[Customer] '{gameObject.name}' → slot {(isLeftSlot ? "IZQUIERDO" : "DERECHO")} | flipX={isRightSlot}");
+        }
+
+        // Icono del pedido
         SetOrderIcon(order);
 
-        // Posición inicial: fuera de pantalla
-        float startX = enterFromLeft
-            ? targetPosition.x - entryOffscreen
-            : targetPosition.x + entryOffscreen;
-        transform.position = new Vector3(startX, targetPosition.y, targetPosition.z);
-
-        // Flip del sprite si entra desde la derecha
-        if (bodyRenderer != null)
-            bodyRenderer.flipX = !enterFromLeft;
-
-        // Panel de mood oculto
+        // Panel de mood oculto hasta el hover
         if (moodPanel != null) moodPanel.SetActive(false);
 
         StartCoroutine(EnterSequence());
     }
 
     // ─────────────────────────────────────────────────────────────
-    // UPDATE — timer de paciencia
+    // UPDATE — timer de paciencia + bloqueo de posición
     // ─────────────────────────────────────────────────────────────
 
     void Update()
     {
-        if (_isServed || _isLeaving) return;
+        // ── BLOQUEO DE POSICIÓN X/Z ──
+        // El Animator puede tener curvas de posición que resetean X/Z a (0,0)
+        // aunque se hayan eliminado los KeyFrames, por "Write Defaults" de Unity.
+        // Forzamos X y Z al valor correcto cada frame mientras el cliente no está
+        // saliendo (la animación de salida sí necesita mover el personaje libremente).
+        if (!_isLeaving && targetPosition != Vector3.zero)
+        {
+            Vector3 pos = transform.position;
+            pos.x = targetPosition.x;
+            pos.z = targetPosition.z;
+            transform.position = pos;
+        }
+
+        if (!_hasArrived || _isServed || _isLeaving) return;
         if (GameManager.Instance == null || !GameManager.Instance.IsGameRunning) return;
 
         _patience -= Time.deltaTime;
 
-        // Actualizar mood según paciencia restante
         UpdateMoodFromPatience();
 
-        // Actualizar panel si está visible
         if (_isHovering) UpdateMoodPanel();
 
-        // El cliente se va si se acaba la paciencia
         if (_patience <= 0f)
         {
             _patience = 0f;
@@ -187,7 +230,7 @@ public class Customer : MonoBehaviour
         else if (ratio > 0.10f) newMood = CustomerMood.Annoyed;
         else newMood = CustomerMood.Furious;
 
-        // Limitar: el mood nunca puede mejorar, solo empeorar
+        // El mood solo empeora, nunca mejora
         if ((int)newMood < (int)_currentMood)
         {
             _currentMood = newMood;
@@ -197,17 +240,14 @@ public class Customer : MonoBehaviour
 
     private void OnMoodChanged()
     {
-        // Activar animación del cliente según mood
         customerAnimator?.SetInteger("Mood", (int)_currentMood);
 
-        // Efectos extra al llegar a Furious
         if (_currentMood == CustomerMood.Furious)
             StartCoroutine(FuriousEffect());
     }
 
     private IEnumerator FuriousEffect()
     {
-        // Pequeño temblor del cliente
         Vector3 original = transform.localPosition;
         for (int i = 0; i < 6; i++)
         {
@@ -218,11 +258,12 @@ public class Customer : MonoBehaviour
     }
 
     // ─────────────────────────────────────────────────────────────
-    // PANEL DE HOVER — aparece al pasar el mouse por el cliente
+    // PANEL DE HOVER
     // ─────────────────────────────────────────────────────────────
 
     void OnMouseEnter()
     {
+        if (!_hasArrived || _isLeaving) return;
         _isHovering = true;
         if (moodPanel != null) moodPanel.SetActive(true);
         UpdateMoodPanel();
@@ -236,42 +277,27 @@ public class Customer : MonoBehaviour
 
     private void UpdateMoodPanel()
     {
-        // Slider de paciencia (0 a 1)
-        if (moodSlider != null)
-            moodSlider.value = PatienceRatio;
-
-        // Color del slider según mood
-        if (moodSliderFill != null)
-            moodSliderFill.color = GetMoodColor(_currentMood);
-
-        // Carita de texto
-        if (moodFaceText != null)
-            moodFaceText.text = GetMoodFace(_currentMood);
+        if (moodSlider != null) moodSlider.value = PatienceRatio;
+        if (moodSliderFill != null) moodSliderFill.color = GetMoodColor(_currentMood);
+        if (moodFaceText != null) moodFaceText.text = GetMoodFace(_currentMood);
     }
 
     // ─────────────────────────────────────────────────────────────
     // ENTREGA DE PEDIDO
     // ─────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Llamado desde OrderManager cuando se entrega el pedido correcto.
-    /// </summary>
+    /// <summary>Pedido correcto: globo verde y salida feliz.</summary>
     public void ServeCorrect()
     {
         if (_isServed || _isLeaving) return;
         _isServed = true;
 
         SetBubbleColor(BubbleState.Correct);
-        customerAnimator?.SetTrigger("Happy");
         AudioManager.Instance?.PlaySound(SoundType.CustomerHappy);
-
-        StartCoroutine(LeaveAfterDelay(1.2f, true));
+        StartCoroutine(ExitSequence(happy: true));
     }
 
-    /// <summary>
-    /// Reduce la paciencia del cliente como penalización por un pedido incorrecto.
-    /// Llamado desde OrderManager al fallar una entrega.
-    /// </summary>
+    /// <summary>Penaliza paciencia por entrega incorrecta a otro cliente.</summary>
     public void PenalizePatience(float amount)
     {
         if (_isServed || _isLeaving) return;
@@ -279,10 +305,7 @@ public class Customer : MonoBehaviour
         Debug.Log($"[Customer] Paciencia penalizada -{amount:F1}s → {_patience:F1}s restantes.");
     }
 
-    /// <summary>
-    /// Llamado cuando se entrega un pedido incorrecto a cualquier cliente
-    /// (todos los globos se ponen rojos).
-    /// </summary>
+    /// <summary>Flash de globo rojo al entregar algo que no era su pedido.</summary>
     public void FlashError()
     {
         if (_isServed || _isLeaving) return;
@@ -296,9 +319,7 @@ public class Customer : MonoBehaviour
         SetBubbleColor(BubbleState.Normal);
     }
 
-    /// <summary>
-    /// El cliente se va (paciencia agotada o pedido incorrecto).
-    /// </summary>
+    /// <summary>El cliente se va: por tiempo agotado (served=false) o tras ser atendido.</summary>
     public void Leave(bool served)
     {
         if (_isLeaving) return;
@@ -307,57 +328,63 @@ public class Customer : MonoBehaviour
         if (!served)
         {
             SetBubbleColor(BubbleState.Error);
-            customerAnimator?.SetTrigger("Angry");
             AudioManager.Instance?.PlaySound(SoundType.CustomerLeave);
         }
 
         if (moodPanel != null) moodPanel.SetActive(false);
+
+        // Notificar al OrderManager antes de iniciar la salida
         _orderManager?.OnCustomerLeft(this, served);
 
-        StartCoroutine(ExitSequence());
+        StartCoroutine(ExitSequence(happy: served));
     }
 
     // ─────────────────────────────────────────────────────────────
-    // ANIMACIONES DE ENTRADA Y SALIDA
+    // SECUENCIAS DE ANIMACIÓN
     // ─────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Entrada: dispara WalkViejita y espera su duración antes de activar
+    /// el timer de paciencia. No mueve el Transform — la animación lo hace.
+    /// </summary>
     private IEnumerator EnterSequence()
     {
-        customerAnimator?.SetTrigger("Walk");
+        // Esperar un frame para que Initialize() fije la posición ANTES de que
+        // el Animator aplique su estado inicial (Write Defaults).
+        yield return null;
 
-        while (Vector3.Distance(transform.position, targetPosition) > 0.05f)
-        {
-            transform.position = Vector3.MoveTowards(
-                transform.position, targetPosition, moveSpeed * Time.deltaTime);
-            yield return null;
-        }
-
+        // Re-aplicar la posición por si el Animator ya la movio en el primer frame
         transform.position = targetPosition;
+
+        customerAnimator?.SetTrigger("WalkIn");
+
+        // Volver a fijar la posición inmediatamente tras el trigger,
+        // antes de que el Animator procese el nuevo estado.
+        transform.position = targetPosition;
+
+        yield return new WaitForSeconds(walkInDuration);
+
+        // El cliente ya está en el mostrador: empieza la cuenta regresiva
+        _hasArrived = true;
         customerAnimator?.SetTrigger("Idle");
+
+        // Asegurar posición final correcta tras la animación de entrada
+        transform.position = targetPosition;
     }
 
-    private IEnumerator LeaveAfterDelay(float delay, bool served)
+    /// <summary>
+    /// Salida: dispara Happy o Angry, espera la reacción, luego WalkBye
+    /// y destruye el GameObject al terminar.
+    /// </summary>
+    private IEnumerator ExitSequence(bool happy)
     {
-        yield return new WaitForSeconds(delay);
-        Leave(served);
-    }
+        // Reacción emocional
+        customerAnimator?.SetTrigger(happy ? "Happy" : "Angry");
+        yield return new WaitForSeconds(reactionDuration);
 
-    private IEnumerator ExitSequence()
-    {
-        // Salir por el mismo lado por donde entró
-        float exitX = enterFromLeft
-            ? targetPosition.x - entryOffscreen
-            : targetPosition.x + entryOffscreen;
-        Vector3 exitPos = new Vector3(exitX, targetPosition.y, targetPosition.z);
-
-        customerAnimator?.SetTrigger("Walk");
-
-        while (Vector3.Distance(transform.position, exitPos) > 0.1f)
-        {
-            transform.position = Vector3.MoveTowards(
-                transform.position, exitPos, moveSpeed * 1.3f * Time.deltaTime);
-            yield return null;
-        }
+        // Salida (WalkBye = WalkViejita en reversa)
+        customerAnimator?.SetTrigger("WalkBye");
+        yield return new WaitForSeconds(walkByeDuration);
 
         Destroy(gameObject);
     }
@@ -371,7 +398,6 @@ public class Customer : MonoBehaviour
     private void SetBubbleColor(BubbleState state)
     {
         if (orderBubbleRenderer == null) return;
-
         orderBubbleRenderer.sprite = state switch
         {
             BubbleState.Correct => bubbleGreen,
@@ -383,8 +409,7 @@ public class Customer : MonoBehaviour
     private void SetOrderIcon(RecipeType recipe)
     {
         if (orderIconRenderer == null) return;
-        // El sprite del pedido se asigna desde el OrderManager usando un diccionario
-        // de RecipeType → Sprite. Por ahora se deja en null hasta tener los assets.
+        // El sprite se asigna desde OrderManager antes de llamar a Initialize()
         // orderIconRenderer.sprite = OrderIconLibrary.Get(recipe);
     }
 

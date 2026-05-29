@@ -2,33 +2,15 @@ using UnityEngine;
 using System.Collections;
 
 /// <summary>
-/// DRAGGABLE ITEM v7 — Corrección de doble-release en entrega correcta.
+/// DRAGGABLE ITEM v8 — Fix de holdToDrag + doble-release en DeliveryPlatform.
 ///
-/// CAMBIO PRINCIPAL v7:
-///   TryDeliverToTarget() ya NO llama DragManager.OnItemReleased() cuando
-///   la entrega es exitosa. En cambio, NotifySuccessfulPlacement() lo hace,
-///   y es responsabilidad del receiver (DeliveryPlatform, Plate, etc.) o
-///   del DragManager notificar el release en el momento apropiado.
-///
-///   Para entregas a DeliveryPlatform:
-///     DeliveryPlatform.OnCorrectDelivery() → DragManager.OnItemReleased()
-///     → plate.ConsumeAndSpawnNew() (Destroy)
-///
-///   Para entregas a Plate/Oven/ItemSlot (receptores que NO destruyen el item):
-///     DragManager.OnItemReleased() es llamado aquí tras ReceiveItem().
-///
-///   REGLA: el objeto que destruye el DraggableItem es responsable de
-///   llamar DragManager.OnItemReleased() ANTES de destruirlo.
-///
-/// MODOS:
-///   MODO A — Cursor-Follow Disposable  (persistentDrag=false, destroyOnFailedDrop=true)
-///     Ingredientes temporales: helado, miel, mezcla.
-///     Drop fallido → se destruye. DragManager.OnItemReleased() se llama aquí.
-///
-///   MODO B — Persistent Drag  (persistentDrag=true, destroyOnFailedDrop=false)
-///     Plate, Waffle extraído del horno.
-///     Drop fallido → se queda donde está o vuelve al horno.
-///     Drop exitoso → el receiver (o DragManager) limpia el estado.
+/// CAMBIOS v8:
+///   - Añadido campo holdToDrag (bool). En MODO B, el objeto sigue el cursor
+///     mientras el botón izquierdo esté presionado; al soltar el botón
+///     intenta entregar en el receptor bajo el cursor.
+///   - TryDeliverToTarget() ahora NO llama NotifySuccessfulPlacement()
+///     para DeliveryPlatform — eso lo hace DeliveryPlatform.ReceiveItem()
+///     directamente, evitando el doble marcado de _releaseHandledByReceiver.
 /// </summary>
 public class DraggableItem : MonoBehaviour
 {
@@ -41,13 +23,20 @@ public class DraggableItem : MonoBehaviour
              "TRUE  = Persistent Drag (Plate, Waffle). Queda donde se suelta.")]
     public bool persistentDrag = false;
 
+    [Tooltip("TRUE = MODO B: sigue el cursor SOLO mientras el botón izquierdo\n" +
+             "está presionado. Al soltar entrega o regresa al origen.\n" +
+             "FALSE = MODO A: sigue al cursor hasta el siguiente click.")]
+    public bool holdToDrag = false;
+
     [Header("Comportamiento de drop fallido")]
-    [Tooltip("TRUE = se destruye si no hay receptor (ingredientes temporales).\n" +
-             "FALSE = vuelve al origen o queda en escena.")]
+    [Tooltip("TRUE = se destruye si no hay receptor.\nFALSE = vuelve al origen.")]
     public bool destroyOnFailedDrop = false;
 
     [Header("Visual")]
     public int carrySortingOrder = 50;
+
+    [Header("AnimatorMixWaffle")]
+    public WaffleMixAnimatorSync ownerMixAnimator;
 
     // ─── Privado ───────────────────────────────────────────────────
     private SpriteRenderer _spriteRenderer;
@@ -60,10 +49,6 @@ public class DraggableItem : MonoBehaviour
 
     private bool _isBeingCarried = false;
     private bool _justPickedUp = false;
-
-    // Flag que evita que TryDeliverToTarget() llame OnItemReleased()
-    // cuando el receiver ya lo hará (ej: DeliveryPlatform en entrega correcta).
-    // Lo pone a true el NotifySuccessfulPlacement del DragManager.
     private bool _releaseHandledByReceiver = false;
 
     public bool IsBeingCarried => _isBeingCarried;
@@ -103,8 +88,18 @@ public class DraggableItem : MonoBehaviour
 
         FollowCursor();
 
-        if (Input.GetMouseButtonDown(0))
-            TryDeliverToTarget();
+        if (holdToDrag)
+        {
+            // MODO B: entrega cuando el jugador suelta el botón
+            if (Input.GetMouseButtonUp(0))
+                TryDeliverToTarget();
+        }
+        else
+        {
+            // MODO A: entrega en el siguiente click
+            if (Input.GetMouseButtonDown(0))
+                TryDeliverToTarget();
+        }
 
         if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape))
             DragManager.Instance?.CancelSelection();
@@ -148,12 +143,8 @@ public class DraggableItem : MonoBehaviour
         {
             Collider2D hit = results[i];
             if (hit == null) continue;
-
-            // Ignorar el propio objeto y sus hijos
             if (hit == _ownCollider || hit.gameObject == gameObject) continue;
             if (hit.transform.IsChildOf(transform)) continue;
-
-            // Ignorar el item arrastrado y sus hijos
             if (carriedItem != null &&
                 (hit.gameObject == carriedItem.gameObject ||
                  hit.transform.IsChildOf(carriedItem.transform))) continue;
@@ -161,26 +152,17 @@ public class DraggableItem : MonoBehaviour
             GameObject hitGO = hit.gameObject;
             Debug.Log($"[DraggableItem]   hit: '{hitGO.name}'");
 
-            // Buscar IItemReceiver en el hit o en su padre
             IItemReceiver receiver = hitGO.GetComponent<IItemReceiver>()
                                   ?? hitGO.GetComponentInParent<IItemReceiver>();
 
             if (receiver == null)
             {
-                // Fallback: el hit puede ser un hijo de un Plate
                 DraggableItem di = hitGO.GetComponent<DraggableItem>()
                                 ?? hitGO.GetComponentInParent<DraggableItem>();
-                if (di != null)
-                    receiver = di.GetComponent<IItemReceiver>();
-
-                if (receiver == null)
-                {
-                    Debug.Log($"[DraggableItem]   Sin IItemReceiver en '{hitGO.name}'");
-                    continue;
-                }
+                if (di != null) receiver = di.GetComponent<IItemReceiver>();
+                if (receiver == null) continue;
             }
 
-            // No entregar a uno mismo
             if (receiver is MonoBehaviour mb && mb.gameObject == gameObject) continue;
 
             bool canReceive = receiver.CanReceive(this);
@@ -198,23 +180,18 @@ public class DraggableItem : MonoBehaviour
         {
             Debug.Log($"[DraggableItem] → Entregando a '{bestName}'");
 
-            // Resetear flag — el receiver decide si él manejará el release
             _releaseHandledByReceiver = false;
 
-            // Notificar ANTES de ReceiveItem para que los listeners
-            // (WaffleMixAnimatorSync, etc.) puedan reaccionar
-            DragManager.Instance?.NotifySuccessfulPlacement(this, bestReceiver);
+            // FIX: NotifySuccessfulPlacement se llama SOLO si el receiver NO es
+            // DeliveryPlatform (DeliveryPlatform lo llama él mismo en ReceiveItem).
+            // Para los demás receptores, notificamos aquí como antes.
+            if (!(bestReceiver is DeliveryPlatform))
+                DragManager.Instance?.NotifySuccessfulPlacement(this, bestReceiver);
 
-            // Llamar ReceiveItem. Algunos receivers (DeliveryPlatform)
-            // llamarán DragManager.OnItemReleased() internamente.
             bestReceiver.ReceiveItem(this);
 
-            // Solo llamar OnItemReleased aquí si el receiver NO lo hizo
-            // (la mayoría de receptores simples: Plate, Oven, ItemSlot)
             if (!_releaseHandledByReceiver)
-            {
                 DragManager.Instance?.OnItemReleased(this);
-            }
         }
         else
         {
@@ -226,11 +203,6 @@ public class DraggableItem : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Llamado por DragManager.NotifySuccessfulPlacement() para indicar
-    /// que el receiver se encargará de llamar OnItemReleased().
-    /// Solo DeliveryPlatform necesita esto por ahora.
-    /// </summary>
     public void MarkReleaseHandledByReceiver()
     {
         _releaseHandledByReceiver = true;
@@ -246,23 +218,19 @@ public class DraggableItem : MonoBehaviour
 
         if (destroyOnFailedDrop)
         {
-            Debug.Log($"[DraggableItem] destroyOnFailedDrop → destruyendo '{gameObject.name}'");
             Destroy(gameObject);
             return;
         }
 
         if (_originOven != null)
         {
-            // Waffle: vuelve al horno
             _originOven.ReturnWaffle(this);
             return;
         }
 
         if (persistentDrag)
         {
-            // Plate: queda donde el jugador lo soltó
             _originPosition = transform.position;
-            Debug.Log($"[DraggableItem] persistentDrag → quedando en {_originPosition}");
         }
         else
         {
@@ -292,10 +260,6 @@ public class DraggableItem : MonoBehaviour
         ApplySortingOrder(_originalSortingOrder);
     }
 
-    /// <summary>
-    /// Cancelación explícita (clic derecho / Escape).
-    /// Siempre vuelve al origen, independientemente de persistentDrag.
-    /// </summary>
     public void ReturnToOrigin()
     {
         StopCarrying();
@@ -333,19 +297,13 @@ public class DraggableItem : MonoBehaviour
     public void SetOriginOven(Oven oven) => _originOven = oven;
     public void ClearOriginOven() => _originOven = null;
 
-    // ─── Helpers ──────────────────────────────────────────────────
-
     private void ApplySortingOrder(int order)
     {
         if (_spriteRenderer != null)
-        {
             _spriteRenderer.sortingOrder = order;
-        }
         else
-        {
             foreach (var sr in GetComponentsInChildren<SpriteRenderer>())
                 sr.sortingOrder = order;
-        }
     }
 
     private IEnumerator BounceAnimation()
@@ -362,5 +320,20 @@ public class DraggableItem : MonoBehaviour
             yield return null;
         }
         transform.localScale = original;
+    }
+
+    public void ResetState()
+    {
+        StopAllCoroutines();
+
+        _isBeingCarried = false;
+        _justPickedUp = false;
+        _releaseHandledByReceiver = false;
+
+        _currentSlot = null;
+
+        ApplySortingOrder(_originalSortingOrder);
+
+        transform.localScale = Vector3.one;
     }
 }

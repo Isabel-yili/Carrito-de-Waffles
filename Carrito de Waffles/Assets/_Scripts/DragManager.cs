@@ -1,5 +1,8 @@
 using UnityEngine;
 using System;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
+using System.Collections.Generic;
 
 /// <summary>
 /// DRAG MANAGER v3 — gestión centralizada de input.
@@ -62,6 +65,16 @@ public class DragManager : MonoBehaviour
 
     void Update()
     {
+
+        if (Input.GetMouseButtonDown(0) && !_hasSelectedItem)
+        {
+            Debug.Log("Pointer over UI: " + IsPointerOverUI());
+
+            // No procesar si el click fue sobre un elemento de UI
+            if (!IsPointerOverUI())
+                HandleWorldClick();
+        }
+
         _clickHandledByOnMouseDown = false;
 
         if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape))
@@ -69,9 +82,30 @@ public class DragManager : MonoBehaviour
             if (_hasSelectedItem) CancelSelection();
             return;
         }
+    }
 
-        if (Input.GetMouseButtonDown(0) && !_hasSelectedItem)
-            HandleWorldClick();
+    private bool IsPointerOverUI()
+    {
+        if (EventSystem.current == null)
+            return false;
+
+        PointerEventData pointerData =
+            new PointerEventData(EventSystem.current);
+
+        pointerData.position = Input.mousePosition;
+
+        List<RaycastResult> results = new List<RaycastResult>();
+
+        EventSystem.current.RaycastAll(pointerData, results);
+
+        foreach (RaycastResult result in results)
+        {
+            // Solo bloquear si es un elemento interactivo REAL
+            if (result.gameObject.GetComponent<Button>() != null)
+                return true;
+        }
+
+        return false;
     }
 
     // ═════════════════════════════════════════════════
@@ -80,6 +114,12 @@ public class DragManager : MonoBehaviour
 
     private void HandleWorldClick()
     {
+        if (IsPointerOverUI())
+            return;
+
+        if (_clickHandledByOnMouseDown)
+            return;
+
         if (_clickHandledByOnMouseDown) return;
 
         Camera cam = Camera.main;
@@ -137,6 +177,23 @@ public class DragManager : MonoBehaviour
             {
                 Debug.Log($"[DragManager]   → Oven: {oven.gameObject.name} | Estado: {oven.State}");
                 oven.RequestExtract();
+                return;
+            }
+        }
+
+        // ── Prioridad 4: RadioController ─────────────────────────
+        for (int i = 0; i < count; i++)
+        {
+            if (hits[i] == null) continue;
+            RadioController radio = hits[i].GetComponent<RadioController>()
+                                 ?? hits[i].GetComponentInParent<RadioController>();
+            if (radio != null)
+            {
+                // No interactuar si el jugador lleva un ítem en mano
+                if (_hasSelectedItem) return;
+
+                Debug.Log($"[DragManager]   → RadioController: {radio.gameObject.name}");
+                radio.HandleClick();
                 return;
             }
         }

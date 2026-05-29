@@ -28,8 +28,8 @@ Transform:
   m_GameObject: {fileID: 6872980495077205361}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -1.6749046, y: -0.47, z: 0}
-  m_LocalScale: {x: 0.11283613, y: 0.11283613, z: 0.11283613}
+  m_LocalPosition: {x: -1.6749043, y: -0.46999997, z: 0}
+  m_LocalScale: {x: 0.11283612, y: 0.11283612, z: 0.11283612}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 6842085968587512428}
@@ -94,7 +94,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   itemType: 13
   isDraggable: 1
-  persistentDrag: 0
+  persistentDrag: 1
+  holdToDrag: 0
   destroyOnFailedDrop: 0
   carrySortingOrder: 50
 --- !u!114 &8491628905757821697
@@ -109,10 +110,138 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 656463a8ab9126b48aad1b1c397c22f2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  plateVisualRenderer: {fileID: 0}
-  plateSprites: []
+  plateVisualRenderer: {fileID: 4335497564180979116}
+  plateSprites:
+  - key: Empty
+    sprite: {fileID: 21300000, guid: 041602fe7526f7142a4a3c01b5f7778e, type: 3}
+  - key: Perfect
+    sprite: {fileID: 21300000, guid: 3c13f8a336bbf2c44be250d94f41eaa0, type: 3}
+  - key: Overcooked
+    sprite: {fileID: 21300000, guid: 623e6b80906a377458971a298ce0b2e9, type: 3}
+  - key: Burned
+    sprite: {fileID: 21300000, guid: 907518a5d1c662a49985e997b8dea796, type: 3}
+  - key: Perfect_Vanilla
+    sprite: {fileID: 21300000, guid: 6244154e6d696084aad055374562cdd4, type: 3}
+  - key: Perfect_Strawberry
+    sprite: {fileID: 21300000, guid: 0517d151ae8494348931a90160a5251e, type: 3}
+  - key: Perfect_Chocolate
+    sprite: {fileID: 21300000, guid: fc9c115aa1aa48d4aa80b245f71ecf39, type: 3}
+  - key: Perfect_Honey
+    sprite: {fileID: 21300000, guid: b445e3d84eb6f874780db64a94647093, type: 3}
+  - key: Overcooked_Vanilla
+    sprite: {fileID: 21300000, guid: f1a627f566b5cfa47a0d1f8d0df94210, type: 3}
+  - key: Overcooked_Strawberry
+    sprite: {fileID: 21300000, guid: 24ff3136bf7124c4c947b34c9f0a9462, type: 3}
+  - key: Overcooked_Chocolate
+    sprite: {fileID: 21300000, guid: 992b9c2cc8f4f46468b0da25c8359cc3, type: 3}
+  - key: Overcooked_Honey
+    sprite: {fileID: 21300000, guid: 74751b6887ab1e04280b0e1c6c7993ae, type: 3}
+  - key: Burned_Vanilla
+    sprite: {fileID: 21300000, guid: a38085dba87cfde4a84b4e0adf735811, type: 3}
+  - key: Burned_Strawberry
+    sprite: {fileID: 21300000, guid: d4b6d0d855951c0449b536316253b597, type: 3}
+  - key: Burned_Chocolate
+    sprite: {fileID: 21300000, guid: ecabe036637d18540a711f10b6923864, type: 3}
+  - key: Burned_Honey
+    sprite: {fileID: 21300000, guid: 9f54e01b1bcd7ba47b101e6b4d7c9f5f, type: 3}
+  - key: Perfect_VanillaStrawberry
+    sprite: {fileID: 21300000, guid: cd968fddafd0d724f9251637f318b9b3, type: 3}
+  - key: Perfect_VanillaChocolate
+    sprite: {fileID: 21300000, guid: 611e6e6a88132294e83e23254f3e2084, type: 3}
+  - key: Perfect_VanillaHoney
+    sprite: {fileID: 21300000, guid: 3b7ffefd2571fc044b551063b0298105, type: 3}
+  - key: Perfect_StrawberryChocolate
+    sprite: {fileID: 21300000, guid: 45dae57bcbaf3b6498e1d27579f5aad4, type: 3}
+  - key: Perfect_StrawberryHoney
+    sprite: {fileID: 21300000, guid: e6ba164b58585ba4b9702df60993f301, type: 3}
+  - key: Perfect_ChocolateHoney
+    sprite: {fileID: 21300000, guid: 0154bf20d8023374b92f891c80dbe6bb, type: 3}
+  - key: Overcooked_VanillaStrawberry
+    sprite: {fileID: 21300000, guid: 8a97ad16931910947ade317f4ec2665e, type: 3}
+  - key: Overcooked_VanillaChocolate
+    sprite: {fileID: 21300000, guid: 4192c46ea96eec34f811c38810eeed59, type: 3}
+  - key: Overcooked_VanillaHoney
+    sprite: {fileID: 21300000, guid: 89e2f1b192cee6a40b03a3f9e9c5d8ed, type: 3}
+  - key: Overcooked_StrawberryChocolate
+    sprite: {fileID: 21300000, guid: 9c105a3e7cff54e46915a8486b905c38, type: 3}
+  - key: Overcooked_StrawberryHoney
+    sprite: {fileID: 21300000, guid: 8554b0a44bea00942a742a7e6b7366b6, type: 3}
+  - key: Overcooked_ChocolateHoney
+    sprite: {fileID: 21300000, guid: 3ab17d44903e7214f9691b22dec836ec, type: 3}
+  - key: Burned_VanillaStrawberry
+    sprite: {fileID: 21300000, guid: 60e4205884af38246b5be24873179d73, type: 3}
+  - key: Burned_VanillaChocolate
+    sprite: {fileID: 21300000, guid: d0e3544be382a2b4083580c831e40280, type: 3}
+  - key: Burned_VanillaHoney
+    sprite: {fileID: 21300000, guid: fefa5cc0a2477a648a154e2906a69310, type: 3}
+  - key: Burned_StrawberryChocolate
+    sprite: {fileID: 21300000, guid: 550c666312c3a914bb412b09a1157885, type: 3}
+  - key: Burned_StrawberryHoney
+    sprite: {fileID: 21300000, guid: 56f516de95328d8459210f7706ac015a, type: 3}
+  - key: Burned_ChocolateHoney
+    sprite: {fileID: 21300000, guid: 17341ede606411447bc774f372d47a58, type: 3}
+  - key: Perfect_VanillaStrawberryChocolate
+    sprite: {fileID: 21300000, guid: 869f10c6ea6b79249acfc9bc00f4ae51, type: 3}
+  - key: Perfect_VanillaStrawberryHoney
+    sprite: {fileID: 21300000, guid: 6bc0dbf48e0de5445bde4159e22cb569, type: 3}
+  - key: Perfect_VanillaChocolateHoney
+    sprite: {fileID: 21300000, guid: 6a80c09121a2c7847b456c71aeb8590d, type: 3}
+  - key: Perfect_StrawberryChocolateHoney
+    sprite: {fileID: 21300000, guid: 55ca4ace66909174ea31602a728174b5, type: 3}
+  - key: Overcooked_VanillaStrawberryChocolate
+    sprite: {fileID: 21300000, guid: e5e3975f2e587184fbe00ae25f61df6d, type: 3}
+  - key: Overcooked_VanillaStrawberryHoney
+    sprite: {fileID: 21300000, guid: b2d327d506a125a4c989b7014cdaa00e, type: 3}
+  - key: Overcooked_VanillaChocolateHoney
+    sprite: {fileID: 21300000, guid: 2d333c824156a044eb7371e4f782680c, type: 3}
+  - key: Overcooked_StrawberryChocolateHoney
+    sprite: {fileID: 21300000, guid: 4eca62bd0a8f986418bcba94db7cda55, type: 3}
+  - key: Burned_VanillaStrawberryChocolate
+    sprite: {fileID: 21300000, guid: 9dd0d1d254e2d24469f91216f858f0ae, type: 3}
+  - key: Burned_VanillaStrawberryHoney
+    sprite: {fileID: 21300000, guid: 4db692190aea1c74ebcc0b4e51889948, type: 3}
+  - key: Burned_VanillaChocolateHoney
+    sprite: {fileID: 21300000, guid: e72cbe70bca468e4fbd5aee66b0c097a, type: 3}
+  - key: Burned_StrawberryChocolateHoney
+    sprite: {fileID: 21300000, guid: 61073a5e04c88734380866adf8b8afe6, type: 3}
+  - key: Perfect_VanillaStrawberryChocolateHoney
+    sprite: {fileID: 21300000, guid: bd57d1cf165a64a4dbf1e51bfad8db56, type: 3}
+  - key: Overcooked_VanillaStrawberryChocolateHoney
+    sprite: {fileID: 21300000, guid: b5994aced84a19e4ab7411ed2e92e53d, type: 3}
+  - key: Burned_VanillaStrawberryChocolateHoney
+    sprite: {fileID: 21300000, guid: b77a8f42efd4cb04791ca9c67c100d9a, type: 3}
+  - key: IceCream_Vanilla
+    sprite: {fileID: 21300000, guid: 9ad93df2a4243b04189e689b63420426, type: 3}
+  - key: IceCream_Strawberry
+    sprite: {fileID: 21300000, guid: 149a4ce620d11794ebe127159c8a4afb, type: 3}
+  - key: IceCream_Chocolate
+    sprite: {fileID: 21300000, guid: 122301ff7df236c409ade74498a6f2f8, type: 3}
+  - key: IceCream_VanillaStrawberry
+    sprite: {fileID: 21300000, guid: ed217c09a475db247a54bf73b5dbdecd, type: 3}
+  - key: IceCream_VanillaChocolate
+    sprite: {fileID: 21300000, guid: b0155d433703be943abf03b1d984fe93, type: 3}
+  - key: IceCream_VanillaHoney
+    sprite: {fileID: 21300000, guid: 5a257f7e20956f14db790e86f7cd80bb, type: 3}
+  - key: IceCream_StrawberryChocolate
+    sprite: {fileID: 21300000, guid: 39a9ec9bea426154083a02bf4e85561e, type: 3}
+  - key: IceCream_StrawberryHoney
+    sprite: {fileID: 21300000, guid: db2ed7f832ff4054589d3845ee8bbd36, type: 3}
+  - key: IceCream_ChocolateHoney
+    sprite: {fileID: 21300000, guid: 65c100ad2c2d37b48ad61060e516b9b9, type: 3}
+  - key: IceCream_VanillaStrawberryChocolate
+    sprite: {fileID: 21300000, guid: d37bc17ce92653a4699d99fc08307799, type: 3}
+  - key: IceCream_VanillaStrawberryHoney
+    sprite: {fileID: 21300000, guid: f81bb9119b17c0449a0d975d5abcaf45, type: 3}
+  - key: IceCream_VanillaChocolateHoney
+    sprite: {fileID: 21300000, guid: d1045a6aad50031428de82a666f925fa, type: 3}
+  - key: IceCream_StrawberryChocolateHoney
+    sprite: {fileID: 21300000, guid: ea731cbd5a082ad43b72c6ed56ec7d05, type: 3}
+  - key: IceCream_VanillaStrawberryChocolateHoney
+    sprite: {fileID: 21300000, guid: 44fb84e64e73d3441a9154b3c89ca1aa, type: 3}
+  - key: Honey
+    sprite: {fileID: 21300000, guid: 046d8f2c1d6879b40a6a1bddc7d70382, type: 3}
   spriteFallback: {fileID: 0}
-  platePrefab: {fileID: 0}
+  platePrefab: {fileID: 6872980495077205361}
   plateSpawnPoint: {fileID: 0}
   debugPreviewKey: Perfect_Vanilla
 --- !u!1 &9194234039882947844

@@ -71,9 +71,8 @@ public class AudioManager : MonoBehaviour
     [Header("═══ Música de Fondo ═══")]
     [Tooltip("AudioSource dedicado a la música (Loop = true, Play On Awake = false)")]
     public AudioSource musicSource;
-    public AudioClip musicMenu;
     public AudioClip musicGameplay;
-    public AudioClip musicGameplayIntense; // GDD: variante más intensa en los últimos 30s
+  
 
     [Header("═══ Volúmenes Base ═══")]
     [Range(0f, 1f)] public float sfxVolumeMultiplier  = 1f;
@@ -132,11 +131,6 @@ public class AudioManager : MonoBehaviour
         }
     }
 
-    void Start()
-    {
-        // Arrancar música según la escena activa
-        PlayMusic(musicMenu);
-    }
 
     // ═════════════════════════════════════════════════════════════════
     // API PÚBLICA — EFECTOS DE SONIDO
@@ -199,8 +193,6 @@ public class AudioManager : MonoBehaviour
     }
 
     public void PlayGameplayMusic()    => PlayMusic(musicGameplay);
-    public void PlayMenuMusic()        => PlayMusic(musicMenu);
-    public void PlayIntenseMusic()     => PlayMusic(musicGameplayIntense);
 
     public void StopMusic()
     {

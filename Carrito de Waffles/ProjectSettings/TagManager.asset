@@ -65,9 +65,9 @@ TagManager:
   - name: Effects
     uniqueID: 2145023127
     locked: 0
-  - name: UI_World
-    uniqueID: 1262024467
-    locked: 0
   - name: BackgroundDetails
     uniqueID: 2499221595
+    locked: 0
+  - name: UI_World
+    uniqueID: 1262024467
     locked: 0
